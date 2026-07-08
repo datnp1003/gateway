@@ -1,0 +1,28 @@
+import { useState } from "react"
+import Sidebar from "./components/Sidebar"
+import Header from "./components/Header"
+import OverviewTab from "./components/OverviewTab"
+import RoutesTab from "./components/RoutesTab"
+import ClustersTab from "./components/ClustersTab"
+import LogsTab from "./components/LogsTab"
+
+const tabs = ["Overview", "Routes", "Clusters", "Logs"]
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState("Overview")
+
+  return (
+    <div className="flex h-screen bg-gray-950 text-gray-100">
+      <Sidebar tabs={tabs} active={activeTab} onSelect={setActiveTab} />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header title={activeTab} />
+        <main className="flex-1 overflow-auto p-6">
+          {activeTab === "Overview" && <OverviewTab />}
+          {activeTab === "Routes" && <RoutesTab />}
+          {activeTab === "Clusters" && <ClustersTab />}
+          {activeTab === "Logs" && <LogsTab />}
+        </main>
+      </div>
+    </div>
+  )
+}
