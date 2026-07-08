@@ -20,22 +20,25 @@ public class YarpConfigSyncService : IYarpConfigSyncService
 
         var routes = endpoints.Select(e =>
         {
-            var transforms = new List<IReadOnlyDictionary<string, string>>();
-            if (!string.IsNullOrEmpty(e.RemovePrefix))
+            var groupPath = e.Group.Path.TrimStart('/');
+            var fullPath = $"/{groupPath}{e.PathPattern}";
+            var removePrefix = "/" + groupPath;
+
+            var transforms = new List<IReadOnlyDictionary<string, string>>
             {
-                transforms.Add(new Dictionary<string, string>
+                new Dictionary<string, string>
                 {
-                    { "PathRemovePrefix", e.RemovePrefix }
-                });
-            }
+                    { "PathRemovePrefix", removePrefix }
+                }
+            };
 
             return new RouteConfig
             {
                 RouteId = $"route-{e.Id}",
                 ClusterId = $"cluster-{e.GroupId}",
-                Match = new RouteMatch { Path = e.PathPattern },
+                Match = new RouteMatch { Path = fullPath },
                 AuthorizationPolicy = e.RequiresAuth ? "Authenticated" : null,
-                Transforms = transforms.Count > 0 ? transforms : null
+                Transforms = transforms
             };
         }).ToList();
 

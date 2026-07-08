@@ -66,7 +66,8 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
         var response = await client.GetAsync("/api/management/groups");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
-        Assert.Contains("auth-cluster", json);
+        Assert.Contains("api", json);
+        Assert.Contains("/auth/", json);
     }
 
     [Fact]
@@ -76,7 +77,8 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
         var response = await client.GetAsync("/api/management/endpoints");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
-        Assert.Contains("/api/auth/", json);
+        Assert.Contains("/auth/{**catch-all}", json);
+        Assert.Contains("/learning/{**catch-all}", json);
     }
 
     [Fact]
@@ -127,7 +129,7 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
     {
         var client = CreateClient();
         var groupName = $"test-{Guid.NewGuid():N}"[..16];
-        var payload = Json(new { name = groupName, description = (string?)null });
+        var payload = Json(new { name = groupName, path = groupName, description = (string?)null });
         var createResponse = await client.PostAsync("/api/management/groups", payload);
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
@@ -140,9 +142,9 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
     public async Task CreateEndpoint_ThenDashboard_HasNewRoute()
     {
         var client = CreateClient();
-        var groupName = $"epg-{Guid.NewGuid():N}"[..16];
+        var groupName = $"/api/epg-{Guid.NewGuid():N}"[..20];
 
-        var groupPayload = Json(new { name = groupName, description = (string?)null });
+        var groupPayload = Json(new { name = groupName, path = groupName, description = (string?)null });
         var groupResp = await client.PostAsync("/api/management/groups", groupPayload);
         var groupJson = await groupResp.Content.ReadAsStringAsync();
         var groupId = JsonDocument.Parse(groupJson).RootElement.GetProperty("id").GetString()!;

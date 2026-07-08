@@ -326,6 +326,20 @@ The gateway container will expose port `5000` to the host machine. You can acces
 
 ## 📅 Changelog
 
+### [v2.0.0] - 2026-07-08
+#### Added
+- 🗂️ Group → Endpoint hierarchy: `/{group.Path}{endpoint.PathPattern}/{**catch-all}`
+- 💾 SQLite persistence with EF Core for dynamic proxy config
+- 🔄 YARP InMemoryConfigProvider — routes update runtime, no restart needed
+- 🌱 Auto-seed from `appsettings.json` on first run
+- ⚡ CRUD REST API: `/api/management/groups`, `/api/management/endpoints`, `/api/management/sync`
+- 🎛️ Dashboard: Groups tab + Endpoints tab with modal CRUD, enable/disable toggles
+- ✅ 11 integration tests (dynamic CRUD, seed, proxy, auth)
+#### Changed
+- Group entity now has required `Path` field for URL namespace
+- Endpoint `PathPattern` is relative (e.g. `/api/{**catch-all}`), full route auto-combined
+- YARP config source: `LoadFromConfig` → `InMemoryConfigProvider`
+
 ### [v1.0.0] - 2026-07-08
 #### Added
 - 🚀 Initial project release with all features.
@@ -342,3 +356,34 @@ The gateway container will expose port `5000` to the host machine. You can acces
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🗂️ Dynamic Proxy Structure
+
+Gateway uses a **Group → Endpoint** hierarchy persisted in SQLite:
+
+```
+gateway.datnp.com/{group-path}/{endpoint-path}/{**catch-all}
+```
+
+| Level | Description | Example |
+|-------|-------------|---------|
+| **Group** | Project/tenant namespace, defines URL prefix | `prot`, `edux` |
+| **Endpoint** | Service route within a group | `/api/{**catch-all}`, `/auth/{**catch-all}` |
+| **Full Route** | `/{group.Path}{endpoint.PathPattern}` | `/prot/api/users` → `/api/users` (backend) |
+
+### Example
+
+```
+Group "prot" path="prot"
+├── Endpoint "api"   path="/api/{**catch-all}"   → gateway.datnp.com/prot/api/...
+├── Endpoint "auth"  path="/auth/{**catch-all}"  → gateway.datnp.com/prot/auth/...
+└── Endpoint "cdn"   path="/cdn/{**catch-all}"    → gateway.datnp.com/prot/cdn/...
+
+Group "edux" path="edux"
+├── Endpoint "api"   path="/api/{**catch-all}"   → gateway.datnp.com/edux/api/...
+└── Endpoint "cms"   path="/cms/{**catch-all}"    → gateway.datnp.com/edux/cms/...
+```
+
+YARP automatically strips `/{group.Path}` prefix so backends receive clean paths.

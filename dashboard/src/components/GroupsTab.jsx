@@ -4,7 +4,7 @@ import useFetch from "../hooks/useFetch"
 // ── Modal ────────────────────────────────────────────────────────────────────
 function GroupModal({ initial, onClose, onSaved }) {
   const editing = !!initial
-  const [form, setForm] = useState({ name: initial?.name ?? "", description: initial?.description ?? "" })
+  const [form, setForm] = useState({ name: initial?.name ?? "", path: initial?.path ?? "", description: initial?.description ?? "" })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
 
@@ -13,6 +13,8 @@ function GroupModal({ initial, onClose, onSaved }) {
   const submit = async e => {
     e.preventDefault()
     if (!form.name.trim()) { setErr("Name is required"); return }
+    if (!form.path.trim()) { setErr("Path is required"); return }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.path.trim())) { setErr("Path must be lowercase slug format (e.g. my-group)"); return }
     setSaving(true); setErr("")
     try {
       const method = editing ? "PUT" : "POST"
@@ -20,7 +22,11 @@ function GroupModal({ initial, onClose, onSaved }) {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: form.name.trim(), description: form.description.trim() }),
+        body: JSON.stringify(
+          editing
+            ? { name: form.name.trim(), path: form.path.trim(), description: form.description.trim(), isEnabled: initial.isEnabled }
+            : { name: form.name.trim(), path: form.path.trim(), description: form.description.trim() }
+        ),
       })
       if (!res.ok) throw new Error(await res.text())
       onSaved()
@@ -55,6 +61,19 @@ function GroupModal({ initial, onClose, onSaved }) {
               placeholder="my-group"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-emerald-500/60 transition-colors"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">
+              Path <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={form.path}
+              onChange={e => set("path", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""))}
+              placeholder="my-group"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-emerald-500/60 transition-colors font-mono"
+            />
+            <p className="text-xs text-gray-600 mt-1">Lowercase letters, numbers and hyphens only</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">Description</label>
@@ -183,6 +202,7 @@ export default function GroupsTab() {
           <thead>
             <tr className="border-b border-gray-800 text-xs text-gray-500 uppercase tracking-wider">
               <th className="text-left px-5 py-3 font-medium">Name</th>
+              <th className="text-left px-5 py-3 font-medium">Path</th>
               <th className="text-left px-5 py-3 font-medium">Description</th>
               <th className="text-center px-5 py-3 font-medium">Enabled</th>
               <th className="text-center px-5 py-3 font-medium">Endpoints</th>
@@ -192,7 +212,7 @@ export default function GroupsTab() {
           <tbody>
             {list.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center py-12 text-gray-600 text-xs">
+                <td colSpan={6} className="text-center py-12 text-gray-600 text-xs">
                   No groups yet. Click <span className="text-emerald-500">+ New Group</span> to add one.
                 </td>
               </tr>
@@ -201,6 +221,7 @@ export default function GroupsTab() {
               <tr key={g.id ?? i}
                 className="border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group/row">
                 <td className="px-5 py-3 font-mono text-emerald-400 font-medium">{g.name}</td>
+                <td className="px-5 py-3 font-mono text-gray-400">{g.path || <span className="text-gray-700">—</span>}</td>
                 <td className="px-5 py-3 text-gray-400 max-w-xs truncate">{g.description || <span className="text-gray-700">—</span>}</td>
                 <td className="px-5 py-3 text-center">
                   <EnabledToggle group={g} onToggled={refresh} />

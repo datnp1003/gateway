@@ -89,7 +89,7 @@ public static class ManagementEndpoints
 
         groups.MapPost("/", async (CreateGroupRequest req, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
-            var group = new ProxyGroup { Name = req.Name, Description = req.Description };
+            var group = new ProxyGroup { Name = req.Name, Path = req.Path, Description = req.Description };
             var created = await repo.CreateGroupAsync(group, ct);
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Created($"/api/management/groups/{created.Id}", created);
@@ -100,6 +100,7 @@ public static class ManagementEndpoints
             var existing = await repo.GetGroupByIdAsync(id, ct);
             if (existing is null) return Results.NotFound();
             if (req.Name != null) existing.Name = req.Name;
+            if (req.Path != null) existing.Path = req.Path;
             if (req.Description != null) existing.Description = req.Description;
             if (req.IsEnabled.HasValue) existing.IsEnabled = req.IsEnabled.Value;
             var updated = await repo.UpdateGroupAsync(existing, ct);
@@ -181,8 +182,8 @@ public static class ManagementEndpoints
 }
 
 // ─── DTOs for CRUD ───
-public record CreateGroupRequest(string Name, string? Description);
-public record UpdateGroupRequest(string? Name, string? Description, bool? IsEnabled);
+public record CreateGroupRequest(string Name, string Path, string? Description);
+public record UpdateGroupRequest(string? Name, string? Path, string? Description, bool? IsEnabled);
 public record CreateEndpointRequest(
     Guid GroupId, string Name, string PathPattern, string Destination,
     string? RemovePrefix, bool RequiresAuth = false);

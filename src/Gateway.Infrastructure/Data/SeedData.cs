@@ -15,51 +15,57 @@ public static class SeedData
         var routesSection = proxySection.GetSection("Routes");
         var clustersSection = proxySection.GetSection("Clusters");
 
+        // Create a single "api" group with path "api"
+        var apiGroup = new ProxyGroup
+        {
+            Name = "api",
+            Path = "api",
+            Description = "Auto-imported API group from appsettings.json",
+            IsEnabled = true
+        };
+        db.Groups.Add(apiGroup);
+        await db.SaveChangesAsync();
+
+        // Map each route into an endpoint under the "api" group
         foreach (var routeChild in routesSection.GetChildren())
         {
             var routeId = routeChild.Key;
             var clusterId = routeChild["ClusterId"] ?? routeId;
-            var path = routeChild.GetSection("Match")["Path"] ?? "";
+            var fullPath = routeChild.GetSection("Match")["Path"] ?? "";
             var authPolicy = routeChild["AuthorizationPolicy"];
-            var transforms = routeChild.GetSection("Transforms");
-            string? removePrefix = null;
 
-            foreach (var transform in transforms.GetChildren())
-            {
-                removePrefix = transform["PathRemovePrefix"];
-                if (removePrefix != null) break;
-            }
+            // Strip the group prefix "/api" from the full path to get the endpoint PathPattern
+            // e.g. "/api/auth/{**catch-all}" -> "/auth/{**catch-all}"
+            const string groupPrefix = "/api";
+            var pathPattern = fullPath.StartsWith(groupPrefix)
+                ? fullPath[groupPrefix.Length..]
+                : fullPath;
+
+            // If pathPattern is empty after stripping, default to "/{**catch-all}"
+            if (string.IsNullOrEmpty(pathPattern))
+                pathPattern = "/{**catch-all}";
 
             var clusterSection = clustersSection.GetSection(clusterId);
             var destinations = clusterSection.GetSection("Destinations");
 
-            var group = new ProxyGroup
-            {
-                Name = clusterId,
-                Description = $"Auto-imported from appsettings.json: {routeId}",
-                IsEnabled = true
-            };
-            db.Groups.Add(group);
-            await db.SaveChangesAsync();
-
             foreach (var destChild in destinations.GetChildren())
             {
-                var destName = destChild.Key;
                 var address = destChild["Address"] ?? "http://localhost:5000";
 
                 var endpoint = new ProxyEndpoint
                 {
-                    GroupId = group.Id,
-                    Name = $"{routeId}/{destName}",
-                    PathPattern = path,
+                    GroupId = apiGroup.Id,
+                    Name = routeId,
+                    PathPattern = pathPattern,
                     Destination = address,
-                    RemovePrefix = removePrefix,
+                    RemovePrefix = null, // Now derived from Group.Path in YarpConfigSyncService
                     RequiresAuth = !string.IsNullOrEmpty(authPolicy),
                     IsEnabled = true
                 };
                 db.Endpoints.Add(endpoint);
             }
-            await db.SaveChangesAsync();
         }
+
+        await db.SaveChangesAsync();
     }
 }
