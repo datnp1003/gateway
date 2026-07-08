@@ -6,7 +6,12 @@ using System.Text;
 using System.Threading.RateLimiting;
 using OpenTelemetry.Trace;
 using Gateway.Endpoints;
+using Gateway.Domain.Interfaces;
+using Gateway.Infrastructure.Data;
+using Gateway.Infrastructure.Repositories;
 using Gateway.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+using Yarp.ReverseProxy.Configuration;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -20,15 +25,29 @@ try
 
     builder.Host.UseSerilog();
 
-    // Management dashboard services
-    builder.Services.AddSingleton<Gateway.Domain.Interfaces.ILogBuffer, Gateway.Infrastructure.Services.LogBuffer>();
-    builder.Services.AddSingleton<Gateway.Domain.Interfaces.IMetricsTracker, Gateway.Infrastructure.Services.MetricsTracker>();
+    // ─── SQLite + EF Core ───
+    builder.Services.AddDbContext<GatewayDbContext>(options =>
+        options.UseSqlite("Data Source=gateway.db"));
 
-    // YARP Reverse Proxy
+    // ─── YARP with InMemoryConfig (dynamic, no appsettings dependency) ───
+    var yarpConfig = new InMemoryConfigProvider(
+        new List<RouteConfig>(),
+        new List<ClusterConfig>());
+    builder.Services.AddSingleton(yarpConfig);
     builder.Services.AddReverseProxy()
-        .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
+        .LoadFromMemory(
+            yarpConfig.GetConfig().Routes,
+            yarpConfig.GetConfig().Clusters);
 
-    // JWT Authentication
+    // ─── Repository + Config Sync ───
+    builder.Services.AddScoped<IProxyConfigRepository, ProxyConfigRepository>();
+    builder.Services.AddScoped<IYarpConfigSyncService, YarpConfigSyncService>();
+
+    // ─── Dashboard services ───
+    builder.Services.AddSingleton<ILogBuffer, LogBuffer>();
+    builder.Services.AddSingleton<IMetricsTracker, MetricsTracker>();
+
+    // ─── JWT Authentication ───
     var jwtSecret = builder.Configuration["Jwt:Secret"]!;
     var jwtIssuer = builder.Configuration["Jwt:Issuer"]!;
     var jwtAudience = builder.Configuration["Jwt:Audience"]!;
@@ -55,7 +74,7 @@ try
             policy.RequireAuthenticatedUser());
     });
 
-    // Rate Limiting
+    // ─── Rate Limiting ───
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -77,7 +96,7 @@ try
         });
     });
 
-    // CORS
+    // ─── CORS ───
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("AllowFrontend", policy =>
@@ -91,10 +110,10 @@ try
         });
     });
 
-    // Health Checks
+    // ─── Health Checks ───
     builder.Services.AddHealthChecks();
 
-    // OpenTelemetry
+    // ─── OpenTelemetry ───
     builder.Services.AddOpenTelemetry()
         .WithTracing(tracing =>
         {
@@ -102,9 +121,26 @@ try
             tracing.AddConsoleExporter();
         });
 
+    // ─── JSON: ignore circular references (Group ↔ Endpoints) ───
+    builder.Services.ConfigureHttpJsonOptions(options =>
+    {
+        options.SerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    });
+
     var app = builder.Build();
 
-    // Middleware Pipeline (order matters!)
+    // ─── Startup: ensure DB + sync routes ───
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        db.Database.EnsureCreated();
+        await SeedData.SeedFromAppSettingsAsync(db, builder.Configuration);
+
+        var syncer = scope.ServiceProvider.GetRequiredService<IYarpConfigSyncService>();
+        await syncer.SyncFromDatabaseAsync();
+    }
+
+    // ─── Middleware Pipeline (order matters!) ───
     app.UseMiddleware<Gateway.Middleware.ExceptionHandlingMiddleware>();
     app.UseMiddleware<Gateway.Middleware.RequestLoggingMiddleware>();
     app.UseSerilogRequestLogging();
