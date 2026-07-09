@@ -191,6 +191,8 @@ gateway/
 - 🔭 **OpenTelemetry Observability**: Telemetry tracing configured via OpenTelemetry ASP.NET Core instrumentation, allowing trace exportation and system tracking.
 - 🛠️ **Real-time Management API**: Exposes specialized endpoints under `/api/management/` providing insight into the reverse proxy state, log buffers, and gateway health metrics.
 - 💻 **Interactive React Dashboard**: Built on React 19 and Tailwind CSS v4, the dashboard displays metrics, cluster/route lists, and real-time logs fetched straight from memory using custom React components.
+- 🧱 **Endpoint Access Policies**: Configure per-endpoint rate limits, blocklisted IPs/CIDRs, and allowlisted IPs/CIDRs from the dashboard.
+- 🔎 **Elasticsearch Log Sink**: Optional Serilog sink for long-term searchable logs while the dashboard keeps a small in-memory live log buffer.
 
 ---
 
@@ -325,6 +327,27 @@ The gateway container will expose port `5000` to the host machine. You can acces
 ---
 
 ## 📅 Changelog
+
+### [v2.1.0] - 2026-07-09
+#### Added
+- 🚦 Per-endpoint access policy fields: `RateLimitPerMinute`, `BlockedIpRanges`, `AllowedIpRanges`
+- 🛡️ Runtime endpoint policy middleware: blocklist → allowlist → rate-limit enforcement
+- 🌐 IP matching supports exact IPs and IPv4 CIDR ranges; `::1` localhost exact match supported
+- 🎛️ Dashboard endpoint policy controls and badges: `RL: N/min`, `Blocklist`, `Whitelist`
+- 🔎 Elasticsearch logging enabled via `Elasticsearch:Enabled` + `Elasticsearch:Url`
+- 📈 P95 latency metric exposed through management metrics/dashboard APIs
+- 🧩 Startup schema patching for existing SQLite DBs when endpoint policy columns are missing
+
+#### Changed
+- 🧹 Dashboard/self traffic is excluded from `LogBuffer` and dashboard metrics (`/api/management*`, `/health`, SPA assets)
+- 🛠️ Vite dev proxy now targets the native Gateway port `http://localhost:5075`
+- 🧾 Serilog keeps Console/File logging and can additionally write to Elasticsearch when enabled
+
+#### Verified
+- ✅ `dotnet build Gateway.sln`
+- ✅ `dotnet test Gateway.sln` — 11/11 passed
+- ✅ `dashboard npm run build`
+- ✅ Runtime checks: blocklist returns `403`, whitelist miss returns `403`, per-endpoint rate-limit returns `429`, proxy traffic still logs, self-traffic does not inflate metrics/logs
 
 ### [v2.0.0] - 2026-07-08
 #### Added

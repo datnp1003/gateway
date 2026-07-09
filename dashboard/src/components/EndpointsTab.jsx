@@ -43,12 +43,15 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
   const editing = !!initial
   const { toast } = useToast()
   const [form, setForm] = useState({
-    groupId:       initial?.groupId       ?? (groups[0]?.id ?? ""),
-    name:          initial?.name          ?? "",
-    pathPattern:   initial?.pathPattern   ?? "",
-    destination:   initial?.destination   ?? "",
-    removePrefix:  initial?.removePrefix  ?? "",
-    requiresAuth:  initial?.requiresAuth  ?? false,
+    groupId:           initial?.groupId           ?? (groups[0]?.id ?? ""),
+    name:              initial?.name              ?? "",
+    pathPattern:       initial?.pathPattern       ?? "",
+    destination:       initial?.destination       ?? "",
+    removePrefix:      initial?.removePrefix      ?? "",
+    requiresAuth:      initial?.requiresAuth      ?? false,
+    rateLimitPerMinute: initial?.rateLimitPerMinute ?? "",
+    blockedIpRanges:   initial?.blockedIpRanges   ?? "",
+    allowedIpRanges:   initial?.allowedIpRanges   ?? "",
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
@@ -69,12 +72,15 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          groupId:      form.groupId,
-          name:         form.name.trim(),
-          pathPattern:  form.pathPattern.trim(),
-          destination:  form.destination.trim(),
-          removePrefix: form.removePrefix.trim() || null,
-          requiresAuth: form.requiresAuth,
+          groupId:            form.groupId,
+          name:               form.name.trim(),
+          pathPattern:        form.pathPattern.trim(),
+          destination:        form.destination.trim(),
+          removePrefix:       form.removePrefix.trim() || null,
+          requiresAuth:       form.requiresAuth,
+          rateLimitPerMinute: form.rateLimitPerMinute !== "" ? Number(form.rateLimitPerMinute) : null,
+          blockedIpRanges:    form.blockedIpRanges.trim() || null,
+          allowedIpRanges:    form.allowedIpRanges.trim() || null,
         }),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -220,6 +226,58 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             <span className="text-sm">Requires Authentication</span>
             <span className="text-sm">{form.requiresAuth ? <Lock className="w-4 h-4 text-amber-400" /> : <Unlock className="w-4 h-4 text-muted-foreground" />}</span>
           </label>
+
+          {/* Rate Limit */}
+          <div>
+            <label htmlFor="endpoint-rate-limit" className="block text-xs font-medium text-muted-foreground mb-1">
+              Rate Limit / min <span className="text-muted-foreground">(optional, per IP)</span>
+            </label>
+            <input
+              id="endpoint-rate-limit"
+              name="rateLimitPerMinute"
+              type="number"
+              min="0"
+              value={form.rateLimitPerMinute}
+              onChange={e => set("rateLimitPerMinute", e.target.value)}
+              placeholder="e.g. 60"
+              aria-label="Rate limit per minute"
+              className="w-full bg-input border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+            />
+          </div>
+
+          {/* Blocked IP Ranges */}
+          <div>
+            <label htmlFor="endpoint-blocked-ip" className="block text-xs font-medium text-muted-foreground mb-1">
+              Blocked IP Ranges <span className="text-muted-foreground">(optional, comma or newline separated)</span>
+            </label>
+            <textarea
+              id="endpoint-blocked-ip"
+              name="blockedIpRanges"
+              rows={3}
+              value={form.blockedIpRanges}
+              onChange={e => set("blockedIpRanges", e.target.value)}
+              placeholder={"127.0.0.1, ::1\n192.168.1.0/24"}
+              aria-label="Blocked IP ranges"
+              className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors resize-y"
+            />
+          </div>
+
+          {/* Allowed IP Ranges */}
+          <div>
+            <label htmlFor="endpoint-allowed-ip" className="block text-xs font-medium text-muted-foreground mb-1">
+              Allowed IP Ranges <span className="text-muted-foreground">(optional — non-empty = whitelist mode)</span>
+            </label>
+            <textarea
+              id="endpoint-allowed-ip"
+              name="allowedIpRanges"
+              rows={3}
+              value={form.allowedIpRanges}
+              onChange={e => set("allowedIpRanges", e.target.value)}
+              placeholder={"203.0.113.0/24\n10.0.0.0/8"}
+              aria-label="Allowed IP ranges"
+              className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors resize-y"
+            />
+          </div>
 
           {err && (
             <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2">
@@ -431,6 +489,7 @@ export default function EndpointsTab() {
                   <TableHead>Destination</TableHead>
                   <TableHead>Remove Prefix</TableHead>
                   <TableHead className="text-center">Auth</TableHead>
+                  <TableHead className="text-center">Policy</TableHead>
                   <TableHead className="text-center">Enabled</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -438,7 +497,7 @@ export default function EndpointsTab() {
               <TableBody>
                 {epList.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12 text-muted-foreground text-xs">
+                    <TableCell colSpan={9} className="text-center py-12 text-muted-foreground text-xs">
                       No endpoints yet. Click <span className="text-primary">+ New Endpoint</span> to add one.
                     </TableCell>
                   </TableRow>
@@ -466,6 +525,22 @@ export default function EndpointsTab() {
                           <Unlock className="w-3 h-3" /> Public
                         </Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex flex-wrap gap-1 justify-center">
+                        {ep.rateLimitPerMinute > 0 && (
+                          <Badge variant="outline" className="text-[10px] text-blue-400 border-blue-400/40">RL: {ep.rateLimitPerMinute}/min</Badge>
+                        )}
+                        {ep.blockedIpRanges && (
+                          <Badge variant="destructive" className="text-[10px]">Blocklist</Badge>
+                        )}
+                        {ep.allowedIpRanges && (
+                          <Badge variant="warning" className="text-[10px]">Whitelist</Badge>
+                        )}
+                        {!ep.rateLimitPerMinute && !ep.blockedIpRanges && !ep.allowedIpRanges && (
+                          <span className="text-muted-foreground/40 text-[10px]">—</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-center">
                       <EnabledToggle endpoint={ep} onToggled={refresh} />

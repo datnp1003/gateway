@@ -10,6 +10,9 @@ public class ProxyEndpoint
     public string? RemovePrefix { get; set; }
     public bool RequiresAuth { get; set; }
     public bool IsEnabled { get; set; } = true;
+    public int? RateLimitPerMinute { get; set; }
+    public string? BlockedIpRanges { get; set; }
+    public string? AllowedIpRanges { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public ProxyGroup Group { get; set; } = null!;

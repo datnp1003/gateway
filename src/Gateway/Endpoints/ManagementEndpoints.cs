@@ -72,6 +72,7 @@ public static class ManagementEndpoints
                 RequestsPerSecond = m.RequestsPerSecond,
                 ErrorRate = m.ErrorRate,
                 AvgLatencyMs = m.AvgLatencyMs,
+                P95LatencyMs = m.P95LatencyMs,
                 ActiveRequests = m.ActiveRequests,
                 TopRoutes = m.TopRoutes,
                 TopStatusCodes = m.TopStatusCodes,
@@ -148,7 +149,10 @@ public static class ManagementEndpoints
                 PathPattern = req.PathPattern,
                 Destination = req.Destination,
                 RemovePrefix = req.RemovePrefix,
-                RequiresAuth = req.RequiresAuth
+                RequiresAuth = req.RequiresAuth,
+                RateLimitPerMinute = req.RateLimitPerMinute,
+                BlockedIpRanges = req.BlockedIpRanges,
+                AllowedIpRanges = req.AllowedIpRanges,
             };
             var created = await repo.CreateEndpointAsync(endpoint, ct);
             await sync.SyncFromDatabaseAsync(ct);
@@ -172,6 +176,9 @@ public static class ManagementEndpoints
             if (req.RemovePrefix != null) ep.RemovePrefix = req.RemovePrefix;
             if (req.RequiresAuth.HasValue) ep.RequiresAuth = req.RequiresAuth.Value;
             if (req.IsEnabled.HasValue) ep.IsEnabled = req.IsEnabled.Value;
+            ep.RateLimitPerMinute = req.RateLimitPerMinute;
+            ep.BlockedIpRanges = req.BlockedIpRanges;
+            ep.AllowedIpRanges = req.AllowedIpRanges;
             var updated = await repo.UpdateEndpointAsync(ep, ct);
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Ok(updated);
@@ -198,7 +205,13 @@ public record CreateGroupRequest(string Name, string Path, string? Description);
 public record UpdateGroupRequest(string? Name, string? Path, string? Description, bool? IsEnabled);
 public record CreateEndpointRequest(
     Guid GroupId, string Name, string PathPattern, string Destination,
-    string? RemovePrefix, bool RequiresAuth = false);
+    string? RemovePrefix, bool RequiresAuth = false,
+    int? RateLimitPerMinute = null,
+    string? BlockedIpRanges = null,
+    string? AllowedIpRanges = null);
 public record UpdateEndpointRequest(
     string? Name, string? PathPattern, string? Destination,
-    string? RemovePrefix, bool? RequiresAuth, bool? IsEnabled);
+    string? RemovePrefix, bool? RequiresAuth, bool? IsEnabled,
+    int? RateLimitPerMinute = null,
+    string? BlockedIpRanges = null,
+    string? AllowedIpRanges = null);

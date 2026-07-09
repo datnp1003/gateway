@@ -26,6 +26,8 @@ public class GatewayDbContext : DbContext
         builder.Entity<ProxyEndpoint>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.BlockedIpRanges).HasMaxLength(4000);
+            e.Property(x => x.AllowedIpRanges).HasMaxLength(4000);
         });
     }
 }

@@ -23,6 +23,7 @@ public class RequestLoggingMiddleware
         var method = context.Request.Method;
         var clientIp = context.Connection.RemoteIpAddress?.ToString();
         var requestId = context.TraceIdentifier;
+        var isInternal = IsInternalRequest(context.Request.Path);
 
         try
         {
@@ -30,40 +31,57 @@ public class RequestLoggingMiddleware
             var elapsed = DateTime.UtcNow - start;
             var statusCode = context.Response.StatusCode;
 
-            _logger.LogInformation(
-                "[{Method}] {Path} -> {StatusCode} ({Elapsed}ms)",
-                method,
-                path,
-                statusCode,
-                elapsed.TotalMilliseconds.ToString("F1"));
+            if (!isInternal)
+            {
+                _logger.LogInformation(
+                    "[{Method}] {Path} -> {StatusCode} ({Elapsed}ms)",
+                    method,
+                    path,
+                    statusCode,
+                    elapsed.TotalMilliseconds.ToString("F1"));
 
-            // Feed log buffer for dashboard
-            _logBuffer.AddInfo(
-                message: $"{method} {path}",
-                path: path,
-                statusCode: statusCode,
-                durationMs: elapsed.TotalMilliseconds,
-                method: method,
-                clientIp: clientIp,
-                destination: context.Request.Host.Value,
-                requestId: requestId);
+                // Feed log buffer for dashboard
+                _logBuffer.AddInfo(
+                    message: $"{method} {path}",
+                    path: path,
+                    statusCode: statusCode,
+                    durationMs: elapsed.TotalMilliseconds,
+                    method: method,
+                    clientIp: clientIp,
+                    destination: context.Request.Host.Value,
+                    requestId: requestId);
 
-            // Feed metrics to dashboard
-            var metrics = context.RequestServices.GetService<IMetricsTracker>();
-            metrics?.TrackRequest(
-                context.Request.Path,
-                statusCode,
-                elapsed.TotalMilliseconds);
+                // Feed metrics to dashboard
+                var metrics = context.RequestServices.GetService<IMetricsTracker>();
+                metrics?.TrackRequest(
+                    context.Request.Path,
+                    statusCode,
+                    elapsed.TotalMilliseconds);
+            }
         }
         catch (Exception ex)
         {
-            _logBuffer.AddError(
-                message: $"{method} {path} — {ex.GetType().Name}: {ex.Message}",
-                path: path,
-                method: method,
-                clientIp: clientIp,
-                requestId: requestId);
+            if (!isInternal)
+            {
+                _logBuffer.AddError(
+                    message: $"{method} {path} — {ex.GetType().Name}: {ex.Message}",
+                    path: path,
+                    method: method,
+                    clientIp: clientIp,
+                    requestId: requestId);
+            }
             throw;
         }
+    }
+
+    private static bool IsInternalRequest(PathString path)
+    {
+        return path.StartsWithSegments("/api/management")
+            || path.StartsWithSegments("/health")
+            || path.StartsWithSegments("/assets")
+            || path.StartsWithSegments("/favicon.svg")
+            || path.StartsWithSegments("/@vite")
+            || path.StartsWithSegments("/src")
+            || path == "/";
     }
 }

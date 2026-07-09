@@ -41,6 +41,7 @@ public class MetricsTracker : IMetricsTracker
                     GetRequestsPerSecond(),
                     GetErrorRate(),
                     GetAvgLatencyMs(),
+                    GetP95LatencyMs(),
                     _activeRequests
                 ));
                 while (_history.Count > 300)
@@ -85,6 +86,14 @@ public class MetricsTracker : IMetricsTracker
         return recent.Average(r => r.DurationMs);
     }
 
+    public double GetP95LatencyMs()
+    {
+        var durations = _recentRequests.Select(r => r.DurationMs).OrderBy(d => d).ToArray();
+        if (durations.Length == 0) return 0;
+        var index = (int)(durations.Length * 0.95);
+        return durations[Math.Min(index, durations.Length - 1)];
+    }
+
     public int GetActiveRequests() => _activeRequests;
 
     public List<KeyValuePair<string, int>> GetTopRoutes(int count = 5) =>
@@ -106,6 +115,7 @@ public class MetricsTracker : IMetricsTracker
         RequestsPerSecond: GetRequestsPerSecond(),
         ErrorRate: GetErrorRate(),
         AvgLatencyMs: GetAvgLatencyMs(),
+        P95LatencyMs: GetP95LatencyMs(),
         ActiveRequests: GetActiveRequests(),
         TopRoutes: GetTopRoutes(),
         TopStatusCodes: GetTopStatusCodes()

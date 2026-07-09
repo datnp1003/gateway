@@ -70,6 +70,9 @@ public class ProxyConfigRepository : IProxyConfigRepository
         existing.RemovePrefix = endpoint.RemovePrefix;
         existing.RequiresAuth = endpoint.RequiresAuth;
         existing.IsEnabled = endpoint.IsEnabled;
+        existing.RateLimitPerMinute = endpoint.RateLimitPerMinute;
+        existing.BlockedIpRanges = endpoint.BlockedIpRanges;
+        existing.AllowedIpRanges = endpoint.AllowedIpRanges;
         existing.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return existing;

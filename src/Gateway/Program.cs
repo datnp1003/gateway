@@ -20,35 +20,28 @@ try
 
     builder.Host.UseSerilog();
 
-    // ─── Elasticsearch logging ───
     var esConfig = builder.Configuration.GetSection("Elasticsearch");
     var esEnabled = esConfig.GetValue<bool>("Enabled");
     var esUrl = esConfig.GetValue<string>("Url") ?? "http://localhost:9200";
     var esIndexFormat = esConfig.GetValue<string>("IndexFormat") ?? "gateway-logs-{0:yyyy.MM}";
 
+    var loggerConfig = new LoggerConfiguration()
+        .MinimumLevel.Information()
+        .WriteTo.Console()
+        .WriteTo.File("logs/gateway-.log", rollingInterval: RollingInterval.Day);
+
     if (esEnabled)
     {
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Information()
-            .WriteTo.Console()
-            .WriteTo.File("logs/gateway-.log", rollingInterval: RollingInterval.Day)
-            .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri(esUrl))
-            {
-                AutoRegisterTemplate = true,
-                IndexFormat = esIndexFormat,
-                FailureCallback = (logEvent, ex) =>
-                    Console.Error.WriteLine($"Elasticsearch sink error: {ex?.Message}")
-            })
-            .CreateLogger();
+        loggerConfig.WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri(esUrl))
+        {
+            AutoRegisterTemplate = true,
+            IndexFormat = esIndexFormat,
+            FailureCallback = (logEvent, ex) =>
+                Console.Error.WriteLine($"Elasticsearch sink error: {ex?.Message}")
+        });
     }
-    else
-    {
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Information()
-            .WriteTo.Console()
-            .WriteTo.File("logs/gateway-.log", rollingInterval: RollingInterval.Day)
-            .CreateLogger();
-    }
+
+    Log.Logger = loggerConfig.CreateLogger();
 
     // ─── SQLite + EF Core ───
     builder.Services.AddDbContext<GatewayDbContext>(options =>
@@ -190,6 +183,7 @@ try
     {
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         db.Database.EnsureCreated();
+        await SeedData.EnsureSchemaAsync(db);
         await SeedData.SeedFromAppSettingsAsync(db, builder.Configuration);
 
         var syncer = scope.ServiceProvider.GetRequiredService<IYarpConfigSyncService>();
@@ -199,6 +193,7 @@ try
     // ─── Middleware Pipeline (order matters!) ───
     app.UseMiddleware<Gateway.Middleware.ExceptionHandlingMiddleware>();
     app.UseMiddleware<Gateway.Middleware.RequestLoggingMiddleware>();
+    app.UseMiddleware<Gateway.Middleware.EndpointAccessPolicyMiddleware>();
     app.UseSerilogRequestLogging();
     app.UseCors("AllowFrontend");
     app.UseAuthentication();

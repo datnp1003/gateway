@@ -9,6 +9,7 @@ public interface IMetricsTracker
     double GetRequestsPerSecond();
     double GetErrorRate();
     double GetAvgLatencyMs();
+    double GetP95LatencyMs();
     int GetActiveRequests();
     List<KeyValuePair<string, int>> GetTopRoutes(int count = 5);
     List<KeyValuePair<string, int>> GetTopStatusCodes(int count = 10);
@@ -21,5 +22,6 @@ public record MetricsSnapshot(
     double RequestsPerSecond,
     double ErrorRate,
     double AvgLatencyMs,
+    double P95LatencyMs,
     int ActiveRequests
 );

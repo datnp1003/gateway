@@ -30,6 +30,7 @@ public record ProxyMetrics(
     double RequestsPerSecond = 0,
     double ErrorRate = 0,
     double AvgLatencyMs = 0,
+    double P95LatencyMs = 0,
     int ActiveRequests = 0,
     List<KeyValuePair<string, int>> TopRoutes = null!,
     List<KeyValuePair<string, int>> TopStatusCodes = null!
