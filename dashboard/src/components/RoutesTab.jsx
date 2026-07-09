@@ -1,32 +1,76 @@
 import useFetch from "../hooks/useFetch"
+import { Card, CardContent } from "./ui/Card"
+import { Badge } from "./ui/Badge"
+import { Skeleton } from "./ui/Skeleton"
+import { Lock, Unlock, ArrowRight, Route } from "lucide-react"
+
+function RoutesSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Card key={i}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-5 w-20 rounded-full" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <Skeleton className="h-3 w-48" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function EmptyState() {
+  return (
+    <Card>
+      <CardContent className="p-8 text-center">
+        <Route className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+        <p className="text-sm font-medium text-muted-foreground">No routes configured</p>
+        <p className="text-xs text-muted-foreground mt-1">Routes will appear when endpoints are added and clusters are assigned</p>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function RoutesTab() {
   const { data: routes, loading } = useFetch("/api/management/routes", 5000)
-  if (loading) return <div className="text-gray-500 animate-pulse">Loading...</div>
+
+  if (loading) return <RoutesSkeleton />
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {routes?.map((r, i) => (
-        <div key={i} className="bg-gray-900 rounded border border-gray-800 p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-emerald-400 font-mono text-sm font-bold">{r.routeId}</span>
-            <span className="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400">→ {r.clusterId}</span>
-            {r.authorizationPolicy && (
-              <span className="px-2 py-0.5 text-xs rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">🔒 {r.authorizationPolicy}</span>
-            )}
-            {!r.authorizationPolicy && (
-              <span className="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-500">Public</span>
-            )}
-          </div>
-          <div className="mt-2 font-mono text-xs text-gray-500">{r.matchPath}</div>
-          {r.transforms?.length > 0 && (
-            <div className="mt-1 flex gap-1">
-              {r.transforms.map((t, j) => (
-                <span key={j} className="px-2 py-0.5 text-xs rounded bg-blue-500/10 text-blue-400">{t}</span>
-              ))}
+        <Card key={i} className="hover:border-primary/20 transition-colors">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Badge variant="success" className="font-mono text-sm font-bold">{r.routeId}</Badge>
+              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+              <Badge variant="secondary" className="font-mono">{r.clusterId}</Badge>
+              {r.authorizationPolicy ? (
+                <Badge variant="warning" className="gap-1">
+                  <Lock className="w-3 h-3" /> {r.authorizationPolicy}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 text-muted-foreground">
+                  <Unlock className="w-3 h-3" /> Public
+                </Badge>
+              )}
             </div>
-          )}
-        </div>
+            <div className="mt-2 font-mono text-xs text-muted-foreground">{r.matchPath}</div>
+            {r.transforms?.length > 0 && (
+              <div className="mt-2 flex gap-1.5 flex-wrap">
+                {r.transforms.map((t, j) => (
+                  <Badge key={j} variant="secondary" className="text-[10px] font-mono">{t}</Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       ))}
+      {(!routes || routes.length === 0) && <EmptyState />}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import GroupsTab from "./components/GroupsTab"
 import EndpointsTab from "./components/EndpointsTab"
 import ClustersTab from "./components/ClustersTab"
 import LogsTab from "./components/LogsTab"
+import { Toaster } from "./components/ui/Toaster"
 
 const tabs = ["Overview", "Routes", "Groups", "Endpoints", "Clusters", "Logs"]
 
@@ -14,11 +15,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("Overview")
 
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100">
+    <div className="flex h-screen bg-background text-foreground">
       <Sidebar tabs={tabs} active={activeTab} onSelect={setActiveTab} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title={activeTab} />
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-4 md:p-6">
           {activeTab === "Overview"  && <OverviewTab />}
           {activeTab === "Routes"    && <RoutesTab />}
           {activeTab === "Groups"    && <GroupsTab />}
@@ -27,6 +28,7 @@ export default function App() {
           {activeTab === "Logs"      && <LogsTab />}
         </main>
       </div>
+      <Toaster />
     </div>
   )
 }

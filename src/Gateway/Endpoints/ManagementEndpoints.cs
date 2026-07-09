@@ -55,24 +55,35 @@ public static class ManagementEndpoints
         api.MapGet("/metrics", (IMetricsTracker metrics) =>
             Results.Ok(metrics.GetMetrics()));
 
+        api.MapGet("/metrics/history", (IMetricsTracker metrics, int count = 60) =>
+            Results.Ok(metrics.GetHistory(Math.Clamp(count, 1, 300))));
+
         api.MapGet("/dashboard", (IProxyConfigProvider configProvider, ILogBuffer logs,
             IMetricsTracker metrics) =>
         {
             var config = configProvider.GetConfig();
-            return Results.Ok(new DashboardData(
-                StartedAt: DateTime.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64),
-                Uptime: TimeSpan.FromMilliseconds(Environment.TickCount64),
-                TotalRequests: metrics.GetMetrics().TotalRequests,
-                ActiveConnections: 0,
-                Routes: config.Routes.Select(r => new RouteInfo(
+            var m = metrics.GetMetrics();
+            return Results.Ok(new
+            {
+                StartedAt = DateTime.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64),
+                Uptime = TimeSpan.FromMilliseconds(Environment.TickCount64).ToString(),
+                TotalRequests = m.TotalRequests,
+                RequestsPerSecond = m.RequestsPerSecond,
+                ErrorRate = m.ErrorRate,
+                AvgLatencyMs = m.AvgLatencyMs,
+                ActiveRequests = m.ActiveRequests,
+                TopRoutes = m.TopRoutes,
+                TopStatusCodes = m.TopStatusCodes,
+                StatusCodes = m.StatusCodes,
+                Routes = config.Routes.Select(r => new RouteInfo(
                     r.RouteId, r.ClusterId ?? "?", r.Match.Path ?? "?",
                     r.AuthorizationPolicy,
                     r.Transforms?.Select(t => t.GetType().Name).ToList() ?? new())).ToList(),
-                Clusters: config.Clusters.Select(c => new ClusterInfo(
+                Clusters = config.Clusters.Select(c => new ClusterInfo(
                     c.ClusterId,
                     c.Destinations?.Select((kvp, _) => new DestinationInfo(kvp.Key, kvp.Value.Address, null)).ToList() ?? new())).ToList(),
-                RecentLogs: logs.GetRecent(50)
-            ));
+                RecentLogs = logs.GetRecent(50)
+            });
         });
 
         // ─── Groups CRUD ───

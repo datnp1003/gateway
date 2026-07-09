@@ -6,6 +6,11 @@ export default function useFetch(url, interval = 0) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!url) {
+      setLoading(false)
+      return
+    }
+
     let cancelled = false
     const fetchData = async () => {
       try {
@@ -21,7 +26,7 @@ export default function useFetch(url, interval = 0) {
     }
     fetchData()
     const timer = interval > 0 ? setInterval(fetchData, interval) : null
-    return () => { cancelled = true; timer && clearInterval(timer) }
+    return () => { cancelled = true; if (timer) clearInterval(timer) }
   }, [url, interval])
 
   return { data, error, loading }

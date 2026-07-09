@@ -1,4 +1,5 @@
 using Serilog;
+using Serilog.Sinks.Elasticsearch;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
@@ -13,17 +14,41 @@ using Gateway.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Yarp.ReverseProxy.Configuration;
 
-Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
-    .WriteTo.Console()
-    .WriteTo.File("logs/gateway-.log", rollingInterval: RollingInterval.Day)
-    .CreateLogger();
-
 try
 {
     var builder = WebApplication.CreateBuilder(args);
 
     builder.Host.UseSerilog();
+
+    // ─── Elasticsearch logging ───
+    var esConfig = builder.Configuration.GetSection("Elasticsearch");
+    var esEnabled = esConfig.GetValue<bool>("Enabled");
+    var esUrl = esConfig.GetValue<string>("Url") ?? "http://localhost:9200";
+    var esIndexFormat = esConfig.GetValue<string>("IndexFormat") ?? "gateway-logs-{0:yyyy.MM}";
+
+    if (esEnabled)
+    {
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .WriteTo.Console()
+            .WriteTo.File("logs/gateway-.log", rollingInterval: RollingInterval.Day)
+            .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri(esUrl))
+            {
+                AutoRegisterTemplate = true,
+                IndexFormat = esIndexFormat,
+                FailureCallback = (logEvent, ex) =>
+                    Console.Error.WriteLine($"Elasticsearch sink error: {ex?.Message}")
+            })
+            .CreateLogger();
+    }
+    else
+    {
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .WriteTo.Console()
+            .WriteTo.File("logs/gateway-.log", rollingInterval: RollingInterval.Day)
+            .CreateLogger();
+    }
 
     // ─── SQLite + EF Core ───
     builder.Services.AddDbContext<GatewayDbContext>(options =>
