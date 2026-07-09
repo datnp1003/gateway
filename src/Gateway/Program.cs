@@ -99,26 +99,57 @@ try
             policy.RequireAuthenticatedUser());
     });
 
-    // ─── Rate Limiting ───
+    // ─── Rate Limiting (per-client IP) ───
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-        options.AddFixedWindowLimiter("fixed", config =>
+        options.OnRejected = async (context, ct) =>
         {
-            config.PermitLimit = 100;
-            config.Window = TimeSpan.FromMinutes(1);
-            config.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-            config.QueueLimit = 10;
-        });
+            var logBuffer = context.HttpContext.RequestServices.GetRequiredService<ILogBuffer>();
+            logBuffer.AddWarning(
+                message: $"Rate limit exceeded: {context.HttpContext.Request.Method} {context.HttpContext.Request.Path}",
+                path: context.HttpContext.Request.Path,
+                method: context.HttpContext.Request.Method,
+                clientIp: context.HttpContext.Connection.RemoteIpAddress?.ToString());
+            await context.HttpContext.Response.WriteAsJsonAsync(
+                new { error = "Too many requests. Try again later.", retryAfter = context.HttpContext.Response.Headers.RetryAfter.ToString() }, ct);
+        };
 
-        options.AddFixedWindowLimiter("auth", config =>
-        {
-            config.PermitLimit = 20;
-            config.Window = TimeSpan.FromMinutes(1);
-            config.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-            config.QueueLimit = 5;
-        });
+        // Management API: 100 req/min per IP
+        options.AddPolicy("management", context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 100,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 10
+                }));
+
+        // Auth endpoints: 20 req/min per IP
+        options.AddPolicy("auth", context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 20,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 5
+                }));
+
+        // Global proxy: 500 req/min per IP
+        options.AddPolicy("proxy", context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 500,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 50
+                }));
     });
 
     // ─── CORS ───
@@ -189,8 +220,9 @@ try
             spa.UseStaticFiles();
         });
 
-    // YARP reverse proxy handles all other routes
+    // YARP reverse proxy handles all other routes (with per-IP rate limiting)
     app.MapReverseProxy();
+    // NOTE: "proxy" rate limit policy applied via YARP config's per-route metadata
 
     app.Run();
 }

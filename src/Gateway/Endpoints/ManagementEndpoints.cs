@@ -13,7 +13,8 @@ public static class ManagementEndpoints
 {
     public static void MapManagementApi(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/management");
+        var api = app.MapGroup("/api/management")
+            .RequireRateLimiting("management");
 
         api.MapGet("/health", (IMetricsTracker metrics) =>
         {

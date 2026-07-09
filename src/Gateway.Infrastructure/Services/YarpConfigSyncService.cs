@@ -38,7 +38,11 @@ public class YarpConfigSyncService : IYarpConfigSyncService
                 ClusterId = $"cluster-{e.GroupId}",
                 Match = new RouteMatch { Path = fullPath },
                 AuthorizationPolicy = e.RequiresAuth ? "Authenticated" : null,
-                Transforms = transforms
+                Transforms = transforms,
+                Metadata = new Dictionary<string, string>
+                {
+                    { "RateLimiterPolicy", "proxy" }
+                }
             };
         }).ToList();
 
