@@ -14,6 +14,10 @@ public static class SeedData
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE Endpoints ADD COLUMN BlockedIpRanges TEXT NULL");
         if (!await HasColumnAsync(db, "Endpoints", "AllowedIpRanges"))
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE Endpoints ADD COLUMN AllowedIpRanges TEXT NULL");
+        if (!await HasColumnAsync(db, "Groups", "BlockedIpRanges"))
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Groups ADD COLUMN BlockedIpRanges TEXT NULL");
+        if (!await HasColumnAsync(db, "Groups", "AllowedIpRanges"))
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Groups ADD COLUMN AllowedIpRanges TEXT NULL");
     }
 
     private static async Task<bool> HasColumnAsync(GatewayDbContext db, string table, string column)

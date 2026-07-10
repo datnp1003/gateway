@@ -5,8 +5,8 @@ const tabIcons = {
   Overview: LayoutDashboard,
   Routes: Route,
   Groups: FolderTree,
-  Endpoints: Link2,
-  Clusters: Server,
+  "API Routes": Link2,
+  "Backend Targets": Server,
   Logs: ScrollText,
 }
 

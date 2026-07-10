@@ -3,8 +3,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card"
 import { Skeleton } from "./ui/Skeleton"
 import { Badge } from "./ui/Badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/Table"
-import { Activity, ArrowUpRight, AlertTriangle, Clock, Wifi, WifiOff, Globe, Server } from "lucide-react"
+import { Activity, ArrowUpRight, AlertTriangle, Clock, Wifi, WifiOff, Globe, Server, ShieldOff, Info } from "lucide-react"
 
+function GatewayModelBanner() {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 to-blue-500/5 text-xs">
+      <ShieldOff className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+      <div className="space-y-0.5 flex-1">
+        <p className="font-semibold text-foreground/90">
+          Gateway · Auth-passthrough mode
+        </p>
+        <p className="text-muted-foreground">
+          The gateway forwards all auth headers to downstream services without enforcing policies.
+          <span className="text-foreground/70"> Each service is responsible for its own authentication and authorization.</span>
+        </p>
+      </div>
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <Badge variant="outline" className="text-[10px] border-amber-400/40 text-amber-400 gap-1">
+          <Info className="w-3 h-3" /> Pass-through proxy
+        </Badge>
+        <Badge variant="outline" className="text-[10px] border-red-400/40 text-red-400 gap-1">
+          <Info className="w-3 h-3" /> Management API — no auth (dev)
+        </Badge>
+      </div>
+    </div>
+  )
+}
 function StatCard({ label, value, subtitle, icon: Icon, color = "emerald", loading }) {
   const gradients = {
     emerald: "from-emerald-500/20 to-emerald-500/5 border-emerald-500/20",
@@ -189,6 +213,9 @@ export default function OverviewTab() {
 
   return (
     <div className="space-y-6">
+      {/* Gateway model banner */}
+      <GatewayModelBanner />
+
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard

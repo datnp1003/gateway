@@ -6,7 +6,24 @@ import { Card, CardContent } from "./ui/Card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/Table"
 import { Skeleton } from "./ui/Skeleton"
 import { Select as SelectInput } from "./ui/Select"
-import { Plus, Pencil, Trash2, Lock, Unlock, AlertTriangle } from "lucide-react"
+import { Plus, Pencil, Trash2, AlertTriangle, ShieldOff, ShieldCheck, Gauge, Ban } from "lucide-react"
+
+// ── Shared: full endpoint payload builder (avoid clearing unset fields on PUT) ─
+function buildFullPayload(ep, overrides) {
+  return {
+    groupId:            ep.groupId,
+    name:               ep.name,
+    pathPattern:        ep.pathPattern,
+    destination:        ep.destination,
+    removePrefix:       ep.removePrefix ?? null,
+    requiresAuth:       ep.requiresAuth ?? false,
+    isEnabled:          ep.isEnabled ?? true,
+    rateLimitPerMinute: ep.rateLimitPerMinute ?? null,
+    blockedIpRanges:    ep.blockedIpRanges ?? null,
+    allowedIpRanges:    ep.allowedIpRanges ?? null,
+    ...overrides,
+  }
+}
 
 // ── useFetch with manual refetch ──────────────────────────────────────────────
 function useFetchWithRefetch(url, interval) {
@@ -38,20 +55,18 @@ function useFetchWithRefetch(url, interval) {
   return { data, loading, refetch }
 }
 
-// ── Endpoint Modal ────────────────────────────────────────────────────────────
+// ── Endpoint Modal (basic route config only) ─────────────────────────────────
 function EndpointModal({ initial, groups, onClose, onSaved }) {
   const editing = !!initial
   const { toast } = useToast()
   const [form, setForm] = useState({
-    groupId:           initial?.groupId           ?? (groups[0]?.id ?? ""),
-    name:              initial?.name              ?? "",
-    pathPattern:       initial?.pathPattern       ?? "",
-    destination:       initial?.destination       ?? "",
-    removePrefix:      initial?.removePrefix      ?? "",
-    requiresAuth:      initial?.requiresAuth      ?? false,
-    rateLimitPerMinute: initial?.rateLimitPerMinute ?? "",
-    blockedIpRanges:   initial?.blockedIpRanges   ?? "",
-    allowedIpRanges:   initial?.allowedIpRanges   ?? "",
+    groupId:      initial?.groupId      ?? (groups[0]?.id ?? ""),
+    name:         initial?.name         ?? "",
+    pathPattern:  initial?.pathPattern  ?? "",
+    destination:  initial?.destination  ?? "",
+    removePrefix: initial?.removePrefix ?? "",
+    requiresAuth: initial?.requiresAuth ?? false,
+    isEnabled:    initial?.isEnabled    ?? true,
   })
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState("")
@@ -68,20 +83,29 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
     try {
       const method = editing ? "PUT" : "POST"
       const url = editing ? `/api/management/endpoints/${initial.id}` : "/api/management/endpoints"
+      // For PUT: preserve existing policy fields to avoid clearing them
+      const body = editing
+        ? buildFullPayload(initial, {
+            groupId:      form.groupId,
+            name:         form.name.trim(),
+            pathPattern:  form.pathPattern.trim(),
+            destination:  form.destination.trim(),
+            removePrefix: form.removePrefix.trim() || null,
+            requiresAuth: form.requiresAuth,
+            isEnabled:    form.isEnabled,
+          })
+        : {
+            groupId:      form.groupId,
+            name:         form.name.trim(),
+            pathPattern:  form.pathPattern.trim(),
+            destination:  form.destination.trim(),
+            removePrefix: form.removePrefix.trim() || null,
+            requiresAuth: form.requiresAuth,
+          }
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          groupId:            form.groupId,
-          name:               form.name.trim(),
-          pathPattern:        form.pathPattern.trim(),
-          destination:        form.destination.trim(),
-          removePrefix:       form.removePrefix.trim() || null,
-          requiresAuth:       form.requiresAuth,
-          rateLimitPerMinute: form.rateLimitPerMinute !== "" ? Number(form.rateLimitPerMinute) : null,
-          blockedIpRanges:    form.blockedIpRanges.trim() || null,
-          allowedIpRanges:    form.allowedIpRanges.trim() || null,
-        }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error(await res.text())
       const endpointName = form.name.trim()
@@ -206,7 +230,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             />
           </div>
 
-          {/* Requires Auth */}
+          {/* Downstream Auth (metadata) */}
           <label className="flex items-center gap-3 cursor-pointer select-none">
             <span className="relative">
               <input
@@ -216,68 +240,16 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
                 className="sr-only peer"
                 checked={form.requiresAuth}
                 onChange={e => set("requiresAuth", e.target.checked)}
-                aria-label="Requires Authentication"
+                aria-label="Service Requires Auth (metadata)"
               />
               <div className={`h-5 w-9 rounded-full transition-colors ${form.requiresAuth ? "bg-primary/30" : "bg-muted"}`} />
               <div className={`absolute top-[3px] h-3.5 w-3.5 rounded-full shadow transition-all ${
                 form.requiresAuth ? "left-[18px] bg-primary" : "left-[3px] bg-muted-foreground"
               }`} />
             </span>
-            <span className="text-sm">Requires Authentication</span>
-            <span className="text-sm">{form.requiresAuth ? <Lock className="w-4 h-4 text-amber-400" /> : <Unlock className="w-4 h-4 text-muted-foreground" />}</span>
+            <span className="text-sm">Service Requires Auth</span>
+            <span className="text-xs text-muted-foreground">(downstream metadata — gateway always forwards auth headers)</span>
           </label>
-
-          {/* Rate Limit */}
-          <div>
-            <label htmlFor="endpoint-rate-limit" className="block text-xs font-medium text-muted-foreground mb-1">
-              Rate Limit / min <span className="text-muted-foreground">(optional, per IP)</span>
-            </label>
-            <input
-              id="endpoint-rate-limit"
-              name="rateLimitPerMinute"
-              type="number"
-              min="0"
-              value={form.rateLimitPerMinute}
-              onChange={e => set("rateLimitPerMinute", e.target.value)}
-              placeholder="e.g. 60"
-              aria-label="Rate limit per minute"
-              className="w-full bg-input border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
-            />
-          </div>
-
-          {/* Blocked IP Ranges */}
-          <div>
-            <label htmlFor="endpoint-blocked-ip" className="block text-xs font-medium text-muted-foreground mb-1">
-              Blocked IP Ranges <span className="text-muted-foreground">(optional, comma or newline separated)</span>
-            </label>
-            <textarea
-              id="endpoint-blocked-ip"
-              name="blockedIpRanges"
-              rows={3}
-              value={form.blockedIpRanges}
-              onChange={e => set("blockedIpRanges", e.target.value)}
-              placeholder={"127.0.0.1, ::1\n192.168.1.0/24"}
-              aria-label="Blocked IP ranges"
-              className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors resize-y"
-            />
-          </div>
-
-          {/* Allowed IP Ranges */}
-          <div>
-            <label htmlFor="endpoint-allowed-ip" className="block text-xs font-medium text-muted-foreground mb-1">
-              Allowed IP Ranges <span className="text-muted-foreground">(optional — non-empty = whitelist mode)</span>
-            </label>
-            <textarea
-              id="endpoint-allowed-ip"
-              name="allowedIpRanges"
-              rows={3}
-              value={form.allowedIpRanges}
-              onChange={e => set("allowedIpRanges", e.target.value)}
-              placeholder={"203.0.113.0/24\n10.0.0.0/8"}
-              aria-label="Allowed IP ranges"
-              className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors resize-y"
-            />
-          </div>
 
           {err && (
             <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2">
@@ -292,6 +264,241 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             <Button type="submit" disabled={saving} className="flex-1">
               {saving ? "Saving…" : editing ? "Update" : "Create"}
             </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Rate Limit Modal ─────────────────────────────────────────────────────────
+function RateLimitModal({ endpoint, onClose, onSaved }) {
+  const { toast } = useToast()
+  const [value, setValue] = useState(endpoint.rateLimitPerMinute != null ? String(endpoint.rateLimitPerMinute) : "")
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState("")
+
+  const submit = async e => {
+    e.preventDefault()
+    const parsed = value.trim() === "" ? null : Number(value)
+    if (parsed !== null && (isNaN(parsed) || parsed < 0)) {
+      setErr("Must be a positive number or empty to remove"); return
+    }
+    setSaving(true); setErr("")
+    try {
+      const res = await fetch(`/api/management/endpoints/${endpoint.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildFullPayload(endpoint, { rateLimitPerMinute: parsed })),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({
+        title: parsed == null
+          ? `Rate limit removed from "${endpoint.name}"`
+          : `Rate limit set to ${parsed}/min on "${endpoint.name}"`,
+        variant: "success",
+      })
+      onSaved()
+    } catch (ex) {
+      const msg = ex.message || "Request failed"
+      setErr(msg)
+      toast({ title: "Failed to save rate limit", description: msg, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-blue-400" />
+            <h2 className="text-sm font-semibold">Rate Limit</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none cursor-pointer" aria-label="Close dialog">✕</button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Endpoint-level rate limit for <span className="text-foreground font-mono">{endpoint.name}</span>.
+            Applies in addition to any group-level policy.
+          </p>
+          <div>
+            <label htmlFor="rl-value" className="block text-xs font-medium text-muted-foreground mb-1">
+              Requests / minute <span className="text-muted-foreground">(per IP — leave empty to remove)</span>
+            </label>
+            <input
+              id="rl-value"
+              type="number"
+              min="0"
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              placeholder="e.g. 60"
+              aria-label="Rate limit per minute"
+              className="w-full bg-input border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+            />
+          </div>
+          {err && (
+            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {err}
+            </p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button type="submit" disabled={saving} className="flex-1">{saving ? "Saving…" : "Save"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Block IPs Modal (Endpoint) ─────────────────────────────────────────────────
+function EndpointBlockIpsModal({ endpoint, onClose, onSaved }) {
+  const { toast } = useToast()
+  const [value, setValue] = useState(endpoint.blockedIpRanges ?? "")
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState("")
+
+  const submit = async e => {
+    e.preventDefault()
+    setSaving(true); setErr("")
+    try {
+      const res = await fetch(`/api/management/endpoints/${endpoint.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildFullPayload(endpoint, { blockedIpRanges: value.trim() || null })),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({
+        title: value.trim()
+          ? `Block list updated on "${endpoint.name}"`
+          : `Block list cleared on "${endpoint.name}"`,
+        variant: "success",
+      })
+      onSaved()
+    } catch (ex) {
+      const msg = ex.message || "Request failed"
+      setErr(msg)
+      toast({ title: "Failed to save block list", description: msg, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center gap-2">
+            <ShieldOff className="w-4 h-4 text-red-400" />
+            <h2 className="text-sm font-semibold">Block IPs — {endpoint.name}</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none cursor-pointer" aria-label="Close dialog">✕</button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Endpoint-level block list. Applies <em>in addition to</em> any group-level block rules.
+          </p>
+          <div>
+            <label htmlFor="ep-block-ip" className="block text-xs font-medium text-muted-foreground mb-1">
+              Blocked IP ranges <span className="text-muted-foreground">(comma or newline separated — empty to clear)</span>
+            </label>
+            <textarea
+              id="ep-block-ip"
+              rows={4}
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              placeholder={"192.168.1.0/24\n10.0.0.1"}
+              aria-label="Blocked IP ranges"
+              className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors resize-y"
+            />
+          </div>
+          {err && (
+            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {err}
+            </p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button type="submit" disabled={saving} className="flex-1">{saving ? "Saving…" : "Save"}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Allow IPs Modal (Endpoint) ─────────────────────────────────────────────────
+function EndpointAllowIpsModal({ endpoint, onClose, onSaved }) {
+  const { toast } = useToast()
+  const [value, setValue] = useState(endpoint.allowedIpRanges ?? "")
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState("")
+
+  const submit = async e => {
+    e.preventDefault()
+    setSaving(true); setErr("")
+    try {
+      const res = await fetch(`/api/management/endpoints/${endpoint.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildFullPayload(endpoint, { allowedIpRanges: value.trim() || null })),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({
+        title: value.trim()
+          ? `Allowlist updated on "${endpoint.name}"`
+          : `Allowlist cleared on "${endpoint.name}"`,
+        variant: "success",
+      })
+      onSaved()
+    } catch (ex) {
+      const msg = ex.message || "Request failed"
+      setErr(msg)
+      toast({ title: "Failed to save allowlist", description: msg, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <h2 className="text-sm font-semibold">Allow IPs — {endpoint.name}</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none cursor-pointer" aria-label="Close dialog">✕</button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Endpoint-level allowlist (whitelist). When non-empty, only listed IPs are allowed through —
+            in addition to group-level rules.
+          </p>
+          <div>
+            <label htmlFor="ep-allow-ip" className="block text-xs font-medium text-muted-foreground mb-1">
+              Allowed IP ranges <span className="text-muted-foreground">(comma or newline separated — empty to disable whitelist)</span>
+            </label>
+            <textarea
+              id="ep-allow-ip"
+              rows={4}
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              placeholder={"203.0.113.0/24\n10.0.0.0/8"}
+              aria-label="Allowed IP ranges"
+              className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors resize-y"
+            />
+          </div>
+          {err && (
+            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {err}
+            </p>
+          )}
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button type="submit" disabled={saving} className="flex-1">{saving ? "Saving…" : "Save"}</Button>
           </div>
         </form>
       </div>
@@ -352,10 +559,11 @@ function EnabledToggle({ endpoint, onToggled }) {
   const toggle = async () => {
     setBusy(true)
     try {
+      // Send full payload to avoid clearing existing policy fields
       await fetch(`/api/management/endpoints/${endpoint.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isEnabled: !endpoint.isEnabled }),
+        body: JSON.stringify(buildFullPayload(endpoint, { isEnabled: !endpoint.isEnabled })),
       })
       onToggled()
     } catch {
@@ -426,8 +634,10 @@ export default function EndpointsTab() {
   const groupList = groups ?? []
   const epList    = endpoints ?? []
 
-  // Build group name lookup
-  const groupName = id => groupList.find(g => g.id === id)?.name ?? id
+  // Build group name and enabled-state lookup
+  const groupMeta  = id => groupList.find(g => g.id === id)
+  const groupName  = id => groupMeta(id)?.name ?? id
+  const groupOff   = id => groupMeta(id)?.isEnabled === false
 
   if (loading && !endpoints) {
     return (
@@ -450,8 +660,8 @@ export default function EndpointsTab() {
       {/* Header bar */}
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-semibold">Endpoints</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">{epList.length} endpoint{epList.length !== 1 ? "s" : ""}</p>
+          <h2 className="text-base font-semibold">API Routes</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{epList.length} route{epList.length !== 1 ? "s" : ""}</p>
         </div>
 
         {/* Group filter */}
@@ -472,7 +682,7 @@ export default function EndpointsTab() {
         </div>
 
         <Button onClick={() => setModal({ mode: "create" })} className="shrink-0">
-          <Plus className="w-4 h-4" /> New Endpoint
+          <Plus className="w-4 h-4" /> New API Route
         </Button>
       </div>
 
@@ -488,7 +698,7 @@ export default function EndpointsTab() {
                   <TableHead>Path Pattern</TableHead>
                   <TableHead>Destination</TableHead>
                   <TableHead>Remove Prefix</TableHead>
-                  <TableHead className="text-center">Auth</TableHead>
+                  <TableHead className="text-center">Svc Auth</TableHead>
                   <TableHead className="text-center">Policy</TableHead>
                   <TableHead className="text-center">Enabled</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -502,12 +712,25 @@ export default function EndpointsTab() {
                     </TableCell>
                   </TableRow>
                 )}
-                {epList.map((ep, i) => (
-                  <TableRow key={ep.id ?? i} className="group/row">
+                {epList.map((ep, i) => {
+                  const isGroupOff = groupOff(ep.groupId)
+                  return (
+                  <TableRow key={ep.id ?? i} className={`group/row${isGroupOff ? " opacity-60" : ""}`}>
                     <TableCell>
-                      <Badge variant="success" className="font-mono text-[11px]">
-                        {groupName(ep.groupId)}
-                      </Badge>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="success" className="font-mono text-[11px]">
+                          {groupName(ep.groupId)}
+                        </Badge>
+                        {isGroupOff && (
+                          <span
+                            title="This route's group is disabled — the route is unreachable regardless of its own enabled state"
+                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/25 leading-none"
+                          >
+                            <Ban className="w-2.5 h-2.5" />
+                            Group off
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="font-medium font-mono text-sm">{ep.name}</TableCell>
                     <TableCell className="font-mono text-xs text-blue-400">{ep.pathPattern}</TableCell>
@@ -517,25 +740,50 @@ export default function EndpointsTab() {
                     </TableCell>
                     <TableCell className="text-center">
                       {ep.requiresAuth ? (
-                        <Badge variant="warning" className="text-[10px] gap-1">
-                          <Lock className="w-3 h-3" /> Auth
+                        <Badge variant="outline" className="text-[10px] gap-1 text-amber-400 border-amber-400/40">
+                          Svc Auth
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground">
-                          <Unlock className="w-3 h-3" /> Public
+                          Svc Open
                         </Badge>
                       )}
                     </TableCell>
+                    {/* Compact policy badges — clickable to edit */}
                     <TableCell className="text-center">
                       <div className="flex flex-wrap gap-1 justify-center">
                         {ep.rateLimitPerMinute > 0 && (
-                          <Badge variant="outline" className="text-[10px] text-blue-400 border-blue-400/40">RL: {ep.rateLimitPerMinute}/min</Badge>
+                          <button
+                            onClick={() => setModal({ mode: "rateLimit", endpoint: ep })}
+                            title="Edit rate limit"
+                            className="cursor-pointer"
+                          >
+                            <Badge variant="outline" className="text-[10px] text-blue-400 border-blue-400/40 hover:border-blue-400 transition-colors">
+                              RL:{ep.rateLimitPerMinute}
+                            </Badge>
+                          </button>
                         )}
                         {ep.blockedIpRanges && (
-                          <Badge variant="destructive" className="text-[10px]">Blocklist</Badge>
+                          <button
+                            onClick={() => setModal({ mode: "blockIps", endpoint: ep })}
+                            title="Edit block list"
+                            className="cursor-pointer"
+                          >
+                            <Badge variant="destructive" className="text-[10px] hover:opacity-80 transition-opacity">
+                              Blocklist
+                            </Badge>
+                          </button>
                         )}
                         {ep.allowedIpRanges && (
-                          <Badge variant="warning" className="text-[10px]">Whitelist</Badge>
+                          <button
+                            onClick={() => setModal({ mode: "allowIps", endpoint: ep })}
+                            title="Edit allowlist"
+                            className="cursor-pointer"
+                          >
+                            <Badge variant="warning" className="text-[10px] hover:opacity-80 transition-opacity">
+                              Whitelist
+                            </Badge>
+                          </button>
                         )}
                         {!ep.rateLimitPerMinute && !ep.blockedIpRanges && !ep.allowedIpRanges && (
                           <span className="text-muted-foreground/40 text-[10px]">—</span>
@@ -543,10 +791,41 @@ export default function EndpointsTab() {
                       </div>
                     </TableCell>
                     <TableCell className="text-center">
-                      <EnabledToggle endpoint={ep} onToggled={refresh} />
+                      <div title={isGroupOff ? "Group is disabled — enable the group first to make this route callable" : undefined}>
+                        <EnabledToggle endpoint={ep} onToggled={refresh} />
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                        {/* Policy icon actions */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setModal({ mode: "rateLimit", endpoint: ep })}
+                          title="Rate limit"
+                          className="h-7 px-2 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10"
+                        >
+                          <Gauge className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setModal({ mode: "blockIps", endpoint: ep })}
+                          title="Block IPs"
+                          className="h-7 px-2 text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                        >
+                          <ShieldOff className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setModal({ mode: "allowIps", endpoint: ep })}
+                          title="Allow IPs"
+                          className="h-7 px-2 text-amber-400 hover:text-amber-300 hover:bg-amber-400/10"
+                        >
+                          <ShieldCheck className="w-3 h-3" />
+                        </Button>
+                        <span className="w-px h-4 bg-border mx-0.5" />
                         <Button
                           variant="outline"
                           size="sm"
@@ -564,7 +843,8 @@ export default function EndpointsTab() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           </div>
@@ -592,6 +872,27 @@ export default function EndpointsTab() {
           endpoint={toDelete}
           onClose={() => setToDelete(null)}
           onDeleted={() => { setToDelete(null); refresh() }}
+        />
+      )}
+      {modal?.mode === "rateLimit" && (
+        <RateLimitModal
+          endpoint={modal.endpoint}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); refresh() }}
+        />
+      )}
+      {modal?.mode === "blockIps" && (
+        <EndpointBlockIpsModal
+          endpoint={modal.endpoint}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); refresh() }}
+        />
+      )}
+      {modal?.mode === "allowIps" && (
+        <EndpointAllowIpsModal
+          endpoint={modal.endpoint}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); refresh() }}
         />
       )}
     </div>

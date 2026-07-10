@@ -102,7 +102,14 @@ public static class ManagementEndpoints
 
         groups.MapPost("/", async (CreateGroupRequest req, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
-            var group = new ProxyGroup { Name = req.Name, Path = req.Path, Description = req.Description };
+            var group = new ProxyGroup
+            {
+                Name = req.Name,
+                Path = req.Path,
+                Description = req.Description,
+                BlockedIpRanges = req.BlockedIpRanges,
+                AllowedIpRanges = req.AllowedIpRanges,
+            };
             var created = await repo.CreateGroupAsync(group, ct);
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Created($"/api/management/groups/{created.Id}", created);
@@ -116,6 +123,11 @@ public static class ManagementEndpoints
             if (req.Path != null) existing.Path = req.Path;
             if (req.Description != null) existing.Description = req.Description;
             if (req.IsEnabled.HasValue) existing.IsEnabled = req.IsEnabled.Value;
+            // null = leave unchanged; empty/whitespace string = clear the policy
+            if (req.BlockedIpRanges != null)
+                existing.BlockedIpRanges = string.IsNullOrWhiteSpace(req.BlockedIpRanges) ? null : req.BlockedIpRanges;
+            if (req.AllowedIpRanges != null)
+                existing.AllowedIpRanges = string.IsNullOrWhiteSpace(req.AllowedIpRanges) ? null : req.AllowedIpRanges;
             var updated = await repo.UpdateGroupAsync(existing, ct);
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Ok(updated);
@@ -201,8 +213,14 @@ public static class ManagementEndpoints
 }
 
 // ─── DTOs for CRUD ───
-public record CreateGroupRequest(string Name, string Path, string? Description);
-public record UpdateGroupRequest(string? Name, string? Path, string? Description, bool? IsEnabled);
+public record CreateGroupRequest(
+    string Name, string Path, string? Description,
+    string? BlockedIpRanges = null,
+    string? AllowedIpRanges = null);
+public record UpdateGroupRequest(
+    string? Name, string? Path, string? Description, bool? IsEnabled,
+    string? BlockedIpRanges = null,
+    string? AllowedIpRanges = null);
 public record CreateEndpointRequest(
     Guid GroupId, string Name, string PathPattern, string Destination,
     string? RemovePrefix, bool RequiresAuth = false,

@@ -70,10 +70,11 @@ public class EndpointAccessPolicyMiddleware
         if (remoteIp != null && remoteIp.IsIPv4MappedToIPv6)
             remoteIp = remoteIp.MapToIPv4();
 
-        // 1. Blocklist check
-        if (!string.IsNullOrWhiteSpace(endpoint.BlockedIpRanges))
+        // 1. Blocklist check: blocked if IP matches the group OR the endpoint blocklist
+        foreach (var blockedRaw in new[] { endpoint.Group?.BlockedIpRanges, endpoint.BlockedIpRanges })
         {
-            var blocked = ParseRanges(endpoint.BlockedIpRanges);
+            if (string.IsNullOrWhiteSpace(blockedRaw)) continue;
+            var blocked = ParseRanges(blockedRaw);
             if (remoteIp != null && IpMatchesAny(remoteIp, clientIp, blocked))
             {
                 _logBuffer.AddWarning(
@@ -84,10 +85,11 @@ public class EndpointAccessPolicyMiddleware
             }
         }
 
-        // 2. Allowlist check (non-empty allowlist = whitelist mode)
-        if (!string.IsNullOrWhiteSpace(endpoint.AllowedIpRanges))
+        // 2. Allowlist check: every configured allowlist (group and endpoint) must match
+        foreach (var allowedRaw in new[] { endpoint.Group?.AllowedIpRanges, endpoint.AllowedIpRanges })
         {
-            var allowed = ParseRanges(endpoint.AllowedIpRanges);
+            if (string.IsNullOrWhiteSpace(allowedRaw)) continue;
+            var allowed = ParseRanges(allowedRaw);
             if (remoteIp == null || !IpMatchesAny(remoteIp, clientIp, allowed))
             {
                 _logBuffer.AddWarning(

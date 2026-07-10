@@ -5,7 +5,7 @@ import { Badge } from "./ui/Badge"
 import { Card, CardContent } from "./ui/Card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/Table"
 import { Skeleton } from "./ui/Skeleton"
-import { Plus, Pencil, Trash2, AlertTriangle } from "lucide-react"
+import { Plus, Pencil, Trash2, AlertTriangle, ShieldBan, ShieldCheck } from "lucide-react"
 
 // ── useFetch with manual refetch ──────────────────────────────────────────────
 function useFetchWithRefetch(url, interval) {
@@ -164,6 +164,126 @@ function GroupModal({ initial, onClose, onSaved }) {
   )
 }
 
+// ── IP Policy Modal ────────────────────────────────────────────────────────────
+// mode: "block" | "allow"
+function IpPolicyModal({ group, mode, onClose, onSaved }) {
+  const { toast } = useToast()
+  const field = mode === "block" ? "blockedIpRanges" : "allowedIpRanges"
+  const [value, setValue] = useState(group[field] ?? "")
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState("")
+
+  const isBlock = mode === "block"
+  const title = isBlock ? "Block IPs" : "Allow IPs"
+  const Icon = isBlock ? ShieldBan : ShieldCheck
+  const accentClass = isBlock
+    ? "text-destructive bg-destructive/10 border-destructive/20"
+    : "text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
+  const ringClass = isBlock ? "focus:ring-destructive/40" : "focus:ring-emerald-500/40"
+
+  const submit = async e => {
+    e.preventDefault()
+    setSaving(true); setErr("")
+    try {
+      const res = await fetch(`/api/management/groups/${group.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: group.name,
+          path: group.path,
+          description: group.description ?? "",
+          isEnabled: group.isEnabled,
+          [field]: value.trim(),
+        }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast({
+        title: `${title} policy saved for "${group.name}"`,
+        variant: "success",
+      })
+      onSaved()
+    } catch (ex) {
+      const msg = ex.message || "Request failed"
+      setErr(msg)
+      toast({
+        title: `Failed to save ${title} policy`,
+        description: msg,
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-card border rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center gap-2">
+            <Icon className={`w-4 h-4 ${isBlock ? "text-destructive" : "text-emerald-500"}`} />
+            <h2 className="text-sm font-semibold">{title} — {group.name}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none cursor-pointer"
+            aria-label="Close dialog"
+          >✕</button>
+        </div>
+
+        {/* Body */}
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          {/* Info callout */}
+          <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2.5 border ${accentClass}`}>
+            <Icon className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              This policy applies to <strong>every endpoint in this group</strong>.{" "}
+              {isBlock
+                ? "The blocklist blocks any request whose source IP matches a listed range."
+                : "The allowlist allows only requests whose source IP matches a listed range — all others are rejected."}
+            </span>
+          </div>
+
+          {/* Textarea */}
+          <div>
+            <label
+              htmlFor={`ip-policy-${mode}`}
+              className="block text-xs font-medium text-muted-foreground mb-1"
+            >
+              IP ranges{" "}
+              <span className="font-normal text-muted-foreground/60">(one per line, CIDR or exact IP — leave empty to clear)</span>
+            </label>
+            <textarea
+              id={`ip-policy-${mode}`}
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              placeholder={"192.168.1.0/24\n10.0.0.1\n172.16.0.0/12"}
+              aria-label={`${title} IP ranges`}
+              rows={7}
+              className={`w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-colors resize-none ${ringClass}`}
+            />
+          </div>
+
+          {err && (
+            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {err}
+            </p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving} className="flex-1">
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Delete confirm ────────────────────────────────────────────────────────────
 function DeleteDialog({ group, onClose, onDeleted }) {
   const [deleting, setDeleting] = useState(false)
@@ -237,7 +357,9 @@ function EnabledToggle({ group, onToggled }) {
     <button
       onClick={toggle}
       disabled={busy}
-      title={group.isEnabled ? "Enabled – click to disable" : "Disabled – click to enable"}
+      title={group.isEnabled
+        ? "Group enabled — click to disable (disables ALL API routes in this group)"
+        : "Group disabled — all API routes inside are unreachable. Click to re-enable."}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 cursor-pointer ${
         group.isEnabled ? "bg-primary/30" : "bg-muted"
       }`}
@@ -246,6 +368,35 @@ function EnabledToggle({ group, onToggled }) {
         group.isEnabled ? "translate-x-[18px] bg-primary" : "translate-x-[2px] bg-muted-foreground"
       }`} />
     </button>
+  )
+}
+
+// ── Policy badges ─────────────────────────────────────────────────────────────
+function PolicyBadges({ group }) {
+  const hasBlock = group.blockedIpRanges && group.blockedIpRanges.trim() !== ""
+  const hasAllow = group.allowedIpRanges && group.allowedIpRanges.trim() !== ""
+  if (!hasBlock && !hasAllow) return null
+  return (
+    <span className="inline-flex items-center gap-1 flex-wrap">
+      {hasBlock && (
+        <span
+          title="Blocklist active"
+          className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 leading-none"
+        >
+          <ShieldBan className="w-2.5 h-2.5" />
+          Block
+        </span>
+      )}
+      {hasAllow && (
+        <span
+          title="Allowlist active"
+          className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 leading-none"
+        >
+          <ShieldCheck className="w-2.5 h-2.5" />
+          Allow
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -297,12 +448,16 @@ export default function GroupsTab() {
   return (
     <div className="space-y-4">
       {/* Header bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold">Groups</h2>
           <p className="text-xs text-muted-foreground mt-0.5">{list.length} group{list.length !== 1 ? "s" : ""}</p>
+          <p className="text-xs text-muted-foreground/70 mt-1 flex items-center gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/80 shrink-0" />
+            Disabling a group disables <em>all</em> API routes inside it — they become unreachable until the group is re-enabled.
+          </p>
         </div>
-        <Button onClick={() => setModal({ mode: "create" })}>
+        <Button onClick={() => setModal({ mode: "create" })} className="shrink-0">
           <Plus className="w-4 h-4" /> New Group
         </Button>
       </div>
@@ -317,7 +472,7 @@ export default function GroupsTab() {
                 <TableHead>Path</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-center">Enabled</TableHead>
-                <TableHead className="text-center">Endpoints</TableHead>
+                <TableHead className="text-center">API Routes</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -331,7 +486,12 @@ export default function GroupsTab() {
               )}
               {list.map((g, i) => (
                 <TableRow key={g.id ?? i} className="group/row">
-                  <TableCell className="font-mono text-primary font-medium">{g.name}</TableCell>
+                  <TableCell className="font-mono text-primary font-medium">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {g.name}
+                      <PolicyBadges group={g} />
+                    </div>
+                  </TableCell>
                   <TableCell className="font-mono text-muted-foreground">{g.path || <span className="text-muted-foreground/40">—</span>}</TableCell>
                   <TableCell className="text-muted-foreground max-w-xs truncate">{g.description || <span className="text-muted-foreground/40">—</span>}</TableCell>
                   <TableCell className="text-center">
@@ -344,6 +504,24 @@ export default function GroupsTab() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title="Block IPs for this group"
+                        onClick={() => setModal({ mode: "block", group: g })}
+                        className="gap-1 text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 hover:bg-destructive/5"
+                      >
+                        <ShieldBan className="w-3 h-3" /> Block IPs
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title="Allow IPs for this group"
+                        onClick={() => setModal({ mode: "allow", group: g })}
+                        className="gap-1 text-emerald-500 hover:text-emerald-500 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/5"
+                      >
+                        <ShieldCheck className="w-3 h-3" /> Allow IPs
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -373,6 +551,14 @@ export default function GroupsTab() {
       )}
       {modal?.mode === "edit" && (
         <GroupModal initial={modal.group} onClose={() => setModal(null)} onSaved={() => { setModal(null); refresh() }} />
+      )}
+      {(modal?.mode === "block" || modal?.mode === "allow") && (
+        <IpPolicyModal
+          group={modal.group}
+          mode={modal.mode}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); refresh() }}
+        />
       )}
       {toDelete && (
         <DeleteDialog group={toDelete} onClose={() => setToDelete(null)} onDeleted={() => { setToDelete(null); refresh() }} />

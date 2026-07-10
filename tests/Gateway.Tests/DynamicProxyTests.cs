@@ -101,11 +101,33 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
     }
 
     [Fact]
-    public async Task ProtectedRoutes_WithoutJWT_Return401()
+    public async Task ServiceRoutes_WithoutJWT_PassThroughToBackend()
     {
         var client = CreateClient();
         var response = await client.GetAsync("/api/learning/courses");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DynamicRoutes_DoNotApplyGatewayAuthorizationPolicy()
+    {
+        var client = CreateClient();
+        var response = await client.GetAsync("/api/management/routes");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("Authenticated", json);
+    }
+
+    [Fact]
+    public async Task DynamicEndpoints_InSameGroup_GetSeparateClusters()
+    {
+        var client = CreateClient();
+        var response = await client.GetAsync("/api/management/clusters");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("http://localhost:5100/", json);
+        Assert.Contains("http://localhost:5101/", json);
+        Assert.DoesNotContain("auth-service", json);
     }
 
     [Fact]

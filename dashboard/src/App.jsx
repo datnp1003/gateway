@@ -9,7 +9,7 @@ import ClustersTab from "./components/ClustersTab"
 import LogsTab from "./components/LogsTab"
 import { Toaster } from "./components/ui/Toaster"
 
-const tabs = ["Overview", "Routes", "Groups", "Endpoints", "Clusters", "Logs"]
+const tabs = ["Overview", "Routes", "Groups", "API Routes", "Backend Targets", "Logs"]
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("Overview")
@@ -20,12 +20,12 @@ export default function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title={activeTab} />
         <main className="flex-1 overflow-auto p-4 md:p-6">
-          {activeTab === "Overview"  && <OverviewTab />}
-          {activeTab === "Routes"    && <RoutesTab />}
-          {activeTab === "Groups"    && <GroupsTab />}
-          {activeTab === "Endpoints" && <EndpointsTab />}
-          {activeTab === "Clusters"  && <ClustersTab />}
-          {activeTab === "Logs"      && <LogsTab />}
+          {activeTab === "Overview"        && <OverviewTab />}
+          {activeTab === "Routes"          && <RoutesTab />}
+          {activeTab === "Groups"          && <GroupsTab />}
+          {activeTab === "API Routes"      && <EndpointsTab />}
+          {activeTab === "Backend Targets" && <ClustersTab />}
+          {activeTab === "Logs"            && <LogsTab />}
         </main>
       </div>
       <Toaster />

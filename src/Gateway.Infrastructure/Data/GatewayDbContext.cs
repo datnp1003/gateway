@@ -17,6 +17,8 @@ public class GatewayDbContext : DbContext
             e.HasKey(g => g.Id);
             e.HasIndex(g => g.Name).IsUnique();
             e.HasIndex(g => g.Path).IsUnique();
+            e.Property(g => g.BlockedIpRanges).HasMaxLength(4000);
+            e.Property(g => g.AllowedIpRanges).HasMaxLength(4000);
             e.HasMany(g => g.Endpoints)
              .WithOne(e => e.Group)
              .HasForeignKey(e => e.GroupId)

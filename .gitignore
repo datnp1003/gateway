@@ -26,3 +26,7 @@ Thumbs.db
 # Environment
 .env
 .env.*
+
+# Local agent/runtime state
+.hermes/
+src/Gateway/gateway.db

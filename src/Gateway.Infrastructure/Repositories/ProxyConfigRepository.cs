@@ -32,8 +32,11 @@ public class ProxyConfigRepository : IProxyConfigRepository
         var existing = await _db.Groups.FindAsync([group.Id], ct)
             ?? throw new KeyNotFoundException($"Group {group.Id} not found");
         existing.Name = group.Name;
+        existing.Path = group.Path;
         existing.Description = group.Description;
         existing.IsEnabled = group.IsEnabled;
+        existing.BlockedIpRanges = group.BlockedIpRanges;
+        existing.AllowedIpRanges = group.AllowedIpRanges;
         existing.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return existing;

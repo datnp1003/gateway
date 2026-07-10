@@ -1,9 +1,6 @@
 using Serilog;
 using Serilog.Sinks.Elasticsearch;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using System.Threading.RateLimiting;
 using OpenTelemetry.Trace;
 using Gateway.Endpoints;
@@ -65,32 +62,9 @@ try
     builder.Services.AddSingleton<ILogBuffer, LogBuffer>();
     builder.Services.AddSingleton<IMetricsTracker, MetricsTracker>();
 
-    // ─── JWT Authentication ───
-    var jwtSecret = builder.Configuration["Jwt:Secret"]!;
-    var jwtIssuer = builder.Configuration["Jwt:Issuer"]!;
-    var jwtAudience = builder.Configuration["Jwt:Audience"]!;
-
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options =>
-        {
-            options.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidateIssuerSigningKey = true,
-                ValidIssuer = jwtIssuer,
-                ValidAudience = jwtAudience,
-                IssuerSigningKey = new SymmetricSecurityKey(
-                    Encoding.UTF8.GetBytes(jwtSecret)),
-                ClockSkew = TimeSpan.Zero
-            };
-        });
-
-    builder.Services.AddAuthorization(options =>
-    {
-        options.AddPolicy("Authenticated", policy =>
-            policy.RequireAuthenticatedUser());
-    });
+    // ─── Auth pass-through ───
+    // Gateway does NOT enforce auth: downstream services own auth/authorization.
+    // Authorization/Cookie headers are forwarded to destinations untouched.
 
     // ─── Rate Limiting (per-client IP) ───
     builder.Services.AddRateLimiter(options =>
@@ -196,8 +170,6 @@ try
     app.UseMiddleware<Gateway.Middleware.EndpointAccessPolicyMiddleware>();
     app.UseSerilogRequestLogging();
     app.UseCors("AllowFrontend");
-    app.UseAuthentication();
-    app.UseAuthorization();
     app.UseRateLimiter();
 
     // Health check endpoint (no auth required)

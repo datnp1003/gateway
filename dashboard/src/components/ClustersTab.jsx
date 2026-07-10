@@ -2,7 +2,7 @@ import useFetch from "../hooks/useFetch"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card"
 import { Badge } from "./ui/Badge"
 import { Skeleton } from "./ui/Skeleton"
-import { Server, CircleCheck } from "lucide-react"
+import { Server, CircleCheck, ArrowRight } from "lucide-react"
 
 function ClusterSkeleton() {
   return (
@@ -28,8 +28,8 @@ function EmptyState() {
     <Card>
       <CardContent className="p-8 text-center">
         <Server className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-        <p className="text-sm font-medium text-muted-foreground">No clusters configured</p>
-        <p className="text-xs text-muted-foreground mt-1">Clusters define destination backends for routing</p>
+        <p className="text-sm font-medium text-muted-foreground">No backend targets configured</p>
+        <p className="text-xs text-muted-foreground mt-1">Each API route has its own backend target cluster that maps to one or more destination addresses.</p>
       </CardContent>
     </Card>
   )
@@ -49,6 +49,9 @@ export default function ClustersTab() {
               <Server className="w-4 h-4" />
               {c.clusterId}
             </CardTitle>
+            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+              <ArrowRight className="w-3 h-3" /> destination{(c.destinations?.length ?? 0) !== 1 ? "s" : ""}: {c.destinations?.length ?? 0}
+            </p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
