@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback } from "react"
 import { useToast } from "../hooks/useToast"
 import { Button } from "./ui/Button"
 import { Badge } from "./ui/Badge"
@@ -7,35 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Skeleton } from "./ui/Skeleton"
 import { Plus, Pencil, Trash2, AlertTriangle, ShieldBan, ShieldCheck } from "lucide-react"
 import { getAuthHeader } from "../lib/auth"
-
-// ── useFetch with manual refetch ──────────────────────────────────────────────
-function useFetchWithRefetch(url, interval) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [tick, setTick] = useState(0)
-
-  const refetch = useCallback(() => setTick(t => t + 1), [])
-
-  useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      try {
-        const res = await fetch(url, { headers: getAuthHeader(), credentials: "include" })
-        if (!res.ok) throw new Error(res.statusText)
-        const json = await res.json()
-        if (!cancelled) setData(json)
-      } catch {
-        // ignore fetch errors
-      }
-      finally { if (!cancelled) setLoading(false) }
-    }
-    run()
-    const timer = interval > 0 ? setInterval(run, interval) : null
-    return () => { cancelled = true; if (timer) clearInterval(timer) }
-  }, [url, interval, tick])
-
-  return { data, loading, refetch }
-}
+import { useFetchWithRefetch } from "../hooks/useFetch"
 
 // ── Group Modal ───────────────────────────────────────────────────────────────
 function GroupModal({ initial, onClose, onSaved }) {

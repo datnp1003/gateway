@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GroupAccessPolicyTests`** — integration tests covering blocklist → 403, allowlist miss → 403, CIDR matching, per-endpoint rate-limit → 429.
 - **`GroupKillSwitchTests`** — integration tests covering group/endpoint enable/disable toggles.
 - **SQLite native bundle vulnerability upgrade** — upgraded to a patched version addressing known CVEs.
-- **Dashboard updates** — login page, auth state banner, token refresh handling, session expiry notice.
+- **Dashboard updates** — login page, auth state banner, session-expiry handling, and friendly OAuth/access-denied errors.
 
 ### Changed
 - `appsettings.json` added to `.gitignore`; `appsettings.Development.json` remains tracked as the minimal dev config template.

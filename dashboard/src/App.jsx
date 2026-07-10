@@ -20,13 +20,13 @@ export default function App() {
     loading,
     user,
     accessDenied,
-    deniedEmail,
+    sessionExpired,
     loginError,
     login,
     logout,
   } = useAuth()
 
-  // F3: Show spinner while exchanging code (brief flash after Google redirect)
+  // Show spinner while exchanging code (brief flash after Google redirect)
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -38,12 +38,12 @@ export default function App() {
     )
   }
 
-  // F2/F3: Show login gate if not authenticated (also handles access-denied state)
+  // Show login gate if not authenticated (covers access-denied and session-expired states)
   if (!authenticated) {
     return (
       <LoginScreen
         accessDenied={accessDenied}
-        deniedEmail={deniedEmail}
+        sessionExpired={sessionExpired}
         loginError={loginError}
         onLogin={login}
         onSignOut={logout}

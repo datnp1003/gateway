@@ -172,9 +172,10 @@ public static class ManagementAuth
                 var picture = external.Principal.FindFirstValue("picture");
                 await ctx.SignOutAsync(ExternalScheme);
 
+                // Deliberately no email in the URL: redirect targets end up in
+                // browser history, logs and Referer headers.
                 if (string.IsNullOrEmpty(email) || !GetAllowedEmails(app.Configuration).Contains(email))
-                    return Results.Redirect(WithQuery(target,
-                        $"auth=denied&email={Uri.EscapeDataString(email ?? "")}"));
+                    return Results.Redirect(WithQuery(target, "auth=denied"));
 
                 var code = codes.Create(email, name, picture);
                 return Results.Redirect(WithQuery(target, $"auth=callback&code={code}"));
@@ -225,9 +226,14 @@ public static class ManagementAuth
     private static string? GetEmail(ClaimsPrincipal user) =>
         user.FindFirstValue("email") ?? user.FindFirstValue(ClaimTypes.Email);
 
+    /// <summary>
+    /// One-time login codes may only land on the SPA dashboard shell. The FE
+    /// always sends returnUrl=/, so this is an exact whitelist — anything else
+    /// (/api, /health, assets, proxy routes, //host or /\host variants,
+    /// absolute URLs) falls back to the dashboard root.
+    /// </summary>
     private static string SafeLocalUrl(string? url) =>
-        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\")
-            ? url : "/";
+        url == "/" ? url : "/";
 
     private static string WithQuery(string path, string query) =>
         path.Contains('?') ? $"{path}&{query}" : $"{path}?{query}";

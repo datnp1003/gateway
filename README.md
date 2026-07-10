@@ -204,7 +204,7 @@ gateway/
   - `proxy`: 500 req/min per IP (proxied traffic, via YARP route metadata)
 - 📂 **Structured Logging (Serilog)**: Console + daily rolling file. Optional Elasticsearch sink enabled via `Elasticsearch:Enabled` + `Elasticsearch:Url`. Dashboard traffic (`/api/management*`, `/health`, SPA assets) is excluded from the log buffer and metrics.
 - 🔭 **OpenTelemetry Tracing**: ASP.NET Core instrumentation with console exporter.
-- 💻 **React 19 Dashboard**: Groups tab, Endpoints tab with modal CRUD, enable/disable toggles, IP policy controls, rate-limit badges. Token stored in sessionStorage; FE owns login/denied/expired states.
+- 💻 **React 19 Dashboard**: Groups tab, Endpoints tab with modal CRUD, enable/disable toggles, IP policy controls, rate-limit badges. Token stored in sessionStorage; FE owns login, denied, OAuth-error, and expired-session states; no refresh token is issued.
 - 📈 **Metrics & Observability**: Total requests, req/sec, error rate, avg/P95 latency, active requests, top routes, status code breakdown, recent log buffer.
 
 ---

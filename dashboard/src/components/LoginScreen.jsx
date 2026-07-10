@@ -1,27 +1,71 @@
 import { useState } from "react"
-import { Shield, ShieldAlert, LogIn, LogOut, Loader2, AlertCircle } from "lucide-react"
+import { Shield, ShieldAlert, LogIn, LogOut, Loader2, AlertCircle, Clock } from "lucide-react"
 
 /**
- * F2: Auth gate screen – JWT flow.
+ * F2: Auth gate screen — JWT flow, no refresh tokens.
  *
  * Props:
- *   accessDenied {bool}          – true when Google identity was rejected by allowlist
- *   deniedEmail  {string|null}   – the blocked account email
- *   loginError   {string|null}   – error from code exchange or challenge call
- *   onLogin      {async fn}      – user-initiated login: fetch challenge → redirect
- *   onSignOut    {async fn}      – clears local auth, returns to login page
+ *   accessDenied  {bool}         — true when Google identity was rejected by allowlist
+ *   sessionExpired {bool}        — true when a management API 401/403 ended the session
+ *   loginError    {string|null}  — error from code exchange, challenge call, or ?auth=error
+ *   onLogin       {async fn}     — user-initiated login: fetch challenge → redirect
+ *   onSignOut     {async fn}     — clears local auth, returns to login page
  *
  * No auto-redirect on load. Login is only triggered by the button.
  */
 export default function LoginScreen({
-  accessDenied = false,
-  deniedEmail  = null,
-  loginError   = null,
+  accessDenied   = false,
+  sessionExpired = false,
+  loginError     = null,
   onLogin,
   onSignOut,
 }) {
-  const [signingIn, setSigningIn] = useState(false)
+  const [signingIn,  setSigningIn]  = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+
+  // ── Session expired (management API returned 401/403) ─────────────────────
+  if (sessionExpired) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          {/* Icon */}
+          <div className="flex justify-center mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+              <Clock className="w-7 h-7 text-amber-400" />
+            </div>
+          </div>
+
+          {/* Card */}
+          <div className="bg-card border border-border rounded-xl p-8 shadow-xl shadow-black/40 text-center space-y-4">
+            <div>
+              <h1 className="text-xl font-bold text-foreground">Session Expired</h1>
+              <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                Your session is no longer valid. Please sign in again to continue.
+              </p>
+            </div>
+
+            <button
+              id="btn-sign-in-again"
+              onClick={async () => {
+                setSigningIn(true)
+                try { await onLogin?.() } finally { setSigningIn(false) }
+              }}
+              disabled={signingIn}
+              className="flex items-center justify-center gap-2.5 w-full px-4 py-2.5 rounded-lg
+                         bg-primary text-primary-foreground font-medium text-sm
+                         hover:opacity-90 active:scale-[0.98] transition-all duration-150 cursor-pointer
+                         disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {signingIn
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <LogIn className="w-4 h-4" />}
+              {signingIn ? "Redirecting…" : "Sign in again"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // ── Access denied ──────────────────────────────────────────────────────────
   if (accessDenied) {
@@ -43,13 +87,6 @@ export default function LoginScreen({
                 Your Google account is not on the allowlist for this dashboard.
               </p>
             </div>
-
-            {deniedEmail && (
-              <div className="rounded-lg bg-secondary/60 border border-border px-4 py-2.5 text-sm">
-                <span className="text-muted-foreground">Signed in as&nbsp;</span>
-                <span className="font-medium text-foreground break-all">{deniedEmail}</span>
-              </div>
-            )}
 
             <p className="text-xs text-muted-foreground leading-relaxed">
               To request access, contact your administrator. You can sign out and try a different account.
@@ -119,7 +156,7 @@ export default function LoginScreen({
             </p>
           </div>
 
-          {/* Error from code exchange or challenge */}
+          {/* Error from code exchange, challenge call, or ?auth=error */}
           {loginError && (
             <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-left">
               <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
@@ -127,14 +164,14 @@ export default function LoginScreen({
             </div>
           )}
 
-          {/* Sign in — user-initiated only, fetches challenge URL then redirects */}
+          {/* Sign in — user-initiated only; fetches challenge URL then redirects */}
           <button
             id="btn-sign-in-google"
             onClick={async () => {
               setSigningIn(true)
-              // onLogin handles the challenge fetch + window.location.href assignment.
-              // If it throws (network error) the spinner stops and loginError is set
-              // by useAuth, causing a re-render with the error shown above.
+              // onLogin fetches the challenge URL and sets window.location.href.
+              // If it throws (network error) the spinner stops and loginError is
+              // set by useAuth, causing a re-render with the error shown above.
               try { await onLogin?.() } finally { setSigningIn(false) }
             }}
             disabled={signingIn}

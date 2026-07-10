@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback } from "react"
 import { useToast } from "../hooks/useToast"
 import { Button } from "./ui/Button"
 import { Badge } from "./ui/Badge"
@@ -8,6 +8,7 @@ import { Skeleton } from "./ui/Skeleton"
 import { Select as SelectInput } from "./ui/Select"
 import { Plus, Pencil, Trash2, AlertTriangle, ShieldOff, ShieldCheck, Gauge, Ban } from "lucide-react"
 import { getAuthHeader } from "../lib/auth"
+import { useFetchWithRefetch } from "../hooks/useFetch"
 
 // ── Shared: full endpoint payload builder (avoid clearing unset fields on PUT) ─
 function buildFullPayload(ep, overrides) {
@@ -26,35 +27,6 @@ function buildFullPayload(ep, overrides) {
   }
 }
 
-// ── useFetch with manual refetch ──────────────────────────────────────────────
-function useFetchWithRefetch(url, interval) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [tick, setTick] = useState(0)
-
-  const refetch = useCallback(() => setTick(t => t + 1), [])
-
-  useEffect(() => {
-    if (!url) { setLoading(false); return }
-    let cancelled = false
-    const run = async () => {
-      try {
-        const res = await fetch(url, { headers: getAuthHeader(), credentials: "include" })
-        if (!res.ok) throw new Error(res.statusText)
-        const json = await res.json()
-        if (!cancelled) setData(json)
-      } catch {
-        // ignore fetch errors
-      }
-      finally { if (!cancelled) setLoading(false) }
-    }
-    run()
-    const timer = interval > 0 ? setInterval(run, interval) : null
-    return () => { cancelled = true; if (timer) clearInterval(timer) }
-  }, [url, interval, tick])
-
-  return { data, loading, refetch }
-}
 
 // ── Endpoint Modal (basic route config only) ─────────────────────────────────
 function EndpointModal({ initial, groups, onClose, onSaved }) {
