@@ -14,7 +14,8 @@ public static class ManagementEndpoints
     public static void MapManagementApi(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/management")
-            .RequireRateLimiting("management");
+            .RequireRateLimiting("management")
+            .RequireAuthorization(Gateway.Authentication.ManagementAuth.Policy);
 
         api.MapGet("/health", (IMetricsTracker metrics) =>
         {
@@ -89,7 +90,7 @@ public static class ManagementEndpoints
         });
 
         // ─── Groups CRUD ───
-        var groups = app.MapGroup("/api/management/groups");
+        var groups = api.MapGroup("/groups");
 
         groups.MapGet("/", async (IProxyConfigRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.GetAllGroupsAsync(ct)));
@@ -141,7 +142,7 @@ public static class ManagementEndpoints
         });
 
         // ─── Endpoints CRUD ───
-        var endpoints = app.MapGroup("/api/management/endpoints");
+        var endpoints = api.MapGroup("/endpoints");
 
         endpoints.MapGet("/", async (Guid? groupId, IProxyConfigRepository repo, CancellationToken ct) =>
         {
@@ -204,7 +205,7 @@ public static class ManagementEndpoints
         });
 
         // ─── Force Sync ───
-        app.MapPost("/api/management/sync", async (IYarpConfigSyncService sync, CancellationToken ct) =>
+        api.MapPost("/sync", async (IYarpConfigSyncService sync, CancellationToken ct) =>
         {
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Ok(new { message = "YARP synced from database" });

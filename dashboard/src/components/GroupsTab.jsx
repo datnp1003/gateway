@@ -6,6 +6,7 @@ import { Card, CardContent } from "./ui/Card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/Table"
 import { Skeleton } from "./ui/Skeleton"
 import { Plus, Pencil, Trash2, AlertTriangle, ShieldBan, ShieldCheck } from "lucide-react"
+import { getAuthHeader } from "../lib/auth"
 
 // ── useFetch with manual refetch ──────────────────────────────────────────────
 function useFetchWithRefetch(url, interval) {
@@ -19,7 +20,7 @@ function useFetchWithRefetch(url, interval) {
     let cancelled = false
     const run = async () => {
       try {
-        const res = await fetch(url)
+        const res = await fetch(url, { headers: getAuthHeader(), credentials: "include" })
         if (!res.ok) throw new Error(res.statusText)
         const json = await res.json()
         if (!cancelled) setData(json)
@@ -57,7 +58,8 @@ function GroupModal({ initial, onClose, onSaved }) {
       const url = editing ? `/api/management/groups/${initial.id}` : "/api/management/groups"
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify(
           editing
             ? { name: form.name.trim(), path: form.path.trim(), description: form.description.trim(), isEnabled: initial.isEnabled }
@@ -187,7 +189,8 @@ function IpPolicyModal({ group, mode, onClose, onSaved }) {
     try {
       const res = await fetch(`/api/management/groups/${group.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify({
           name: group.name,
           path: group.path,
@@ -292,7 +295,7 @@ function DeleteDialog({ group, onClose, onDeleted }) {
   const confirm = async () => {
     setDeleting(true)
     try {
-      const res = await fetch(`/api/management/groups/${group.id}`, { method: "DELETE" })
+      const res = await fetch(`/api/management/groups/${group.id}`, { method: "DELETE", headers: getAuthHeader(), credentials: "include" })
       if (!res.ok) throw new Error(await res.text())
       toast({
         title: `Group "${group.name}" deleted`,
@@ -339,7 +342,8 @@ function EnabledToggle({ group, onToggled }) {
     try {
       await fetch(`/api/management/groups/${group.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify({ isEnabled: !group.isEnabled }),
       })
       onToggled()

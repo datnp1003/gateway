@@ -29,6 +29,7 @@ public class GroupAccessPolicyTests : IClassFixture<WebApplicationFactory<Progra
     private HttpClient CreateClientWithIp(string fakeIp) =>
         _factory.WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Authentication:DevBypass", "true");
             builder.ConfigureServices(services =>
             {
                 var descriptor = services.SingleOrDefault(

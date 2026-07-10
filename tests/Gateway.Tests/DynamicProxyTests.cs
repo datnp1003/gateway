@@ -18,6 +18,7 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
         _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Authentication:DevBypass", "true");
             builder.ConfigureServices(services =>
             {
                 var descriptor = services.SingleOrDefault(

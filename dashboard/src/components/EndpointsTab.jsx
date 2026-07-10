@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Skeleton } from "./ui/Skeleton"
 import { Select as SelectInput } from "./ui/Select"
 import { Plus, Pencil, Trash2, AlertTriangle, ShieldOff, ShieldCheck, Gauge, Ban } from "lucide-react"
+import { getAuthHeader } from "../lib/auth"
 
 // ── Shared: full endpoint payload builder (avoid clearing unset fields on PUT) ─
 function buildFullPayload(ep, overrides) {
@@ -38,7 +39,7 @@ function useFetchWithRefetch(url, interval) {
     let cancelled = false
     const run = async () => {
       try {
-        const res = await fetch(url)
+        const res = await fetch(url, { headers: getAuthHeader(), credentials: "include" })
         if (!res.ok) throw new Error(res.statusText)
         const json = await res.json()
         if (!cancelled) setData(json)
@@ -104,7 +105,8 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
           }
       const res = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -288,7 +290,8 @@ function RateLimitModal({ endpoint, onClose, onSaved }) {
     try {
       const res = await fetch(`/api/management/endpoints/${endpoint.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify(buildFullPayload(endpoint, { rateLimitPerMinute: parsed })),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -366,7 +369,8 @@ function EndpointBlockIpsModal({ endpoint, onClose, onSaved }) {
     try {
       const res = await fetch(`/api/management/endpoints/${endpoint.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify(buildFullPayload(endpoint, { blockedIpRanges: value.trim() || null })),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -442,7 +446,8 @@ function EndpointAllowIpsModal({ endpoint, onClose, onSaved }) {
     try {
       const res = await fetch(`/api/management/endpoints/${endpoint.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify(buildFullPayload(endpoint, { allowedIpRanges: value.trim() || null })),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -514,7 +519,7 @@ function DeleteDialog({ endpoint, onClose, onDeleted }) {
   const confirm = async () => {
     setDeleting(true)
     try {
-      const res = await fetch(`/api/management/endpoints/${endpoint.id}`, { method: "DELETE" })
+      const res = await fetch(`/api/management/endpoints/${endpoint.id}`, { method: "DELETE", headers: getAuthHeader(), credentials: "include" })
       if (!res.ok) throw new Error(await res.text())
       toast({
         title: `Endpoint "${endpoint.name}" deleted`,
@@ -562,7 +567,8 @@ function EnabledToggle({ endpoint, onToggled }) {
       // Send full payload to avoid clearing existing policy fields
       await fetch(`/api/management/endpoints/${endpoint.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeader() },
+        credentials: "include",
         body: JSON.stringify(buildFullPayload(endpoint, { isEnabled: !endpoint.isEnabled })),
       })
       onToggled()

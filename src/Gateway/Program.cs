@@ -3,6 +3,7 @@ using Serilog.Sinks.Elasticsearch;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using OpenTelemetry.Trace;
+using Gateway.Authentication;
 using Gateway.Endpoints;
 using Gateway.Domain.Interfaces;
 using Gateway.Infrastructure.Data;
@@ -62,9 +63,13 @@ try
     builder.Services.AddSingleton<ILogBuffer, LogBuffer>();
     builder.Services.AddSingleton<IMetricsTracker, MetricsTracker>();
 
-    // ─── Auth pass-through ───
-    // Gateway does NOT enforce auth: downstream services own auth/authorization.
+    // ─── Auth ───
+    // Proxy routes stay pass-through: downstream services own auth/authorization,
     // Authorization/Cookie headers are forwarded to destinations untouched.
+    // Only /api/management/** requires auth: a Gateway-issued admin JWT
+    // (Google OAuth → one-time code → bearer token). The SPA shell itself is
+    // always served anonymously; the FE owns login/denied states.
+    builder.AddManagementAuth();
 
     // ─── Rate Limiting (per-client IP) ───
     builder.Services.AddRateLimiter(options =>
@@ -171,14 +176,20 @@ try
     app.UseSerilogRequestLogging();
     app.UseCors("AllowFrontend");
     app.UseRateLimiter();
+    app.UseAuthentication();
+    app.UseAuthorization();
 
     // Health check endpoint (no auth required)
     app.MapHealthChecks("/health");
 
-    // Management API
+    // Auth endpoints (challenge/login/exchange/me/logout)
+    app.MapAuthEndpoints();
+
+    // Management API (requires admin JWT via ManagementOnly policy)
     app.MapManagementApi();
 
-    // Serve React SPA static files (only for non-API paths)
+    // Serve React SPA static files (only for non-API paths), always anonymously —
+    // authentication state is rendered by the FE, not gated by the server.
     app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/api")
                        && !ctx.Request.Path.StartsWithSegments("/health"),
         spa =>
