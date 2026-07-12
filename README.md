@@ -7,247 +7,298 @@
 
 ## 📖 Overview
 
-**Gateway** is a production-ready, high-performance API Gateway designed for the **English Learning** ecosystem. Built on ASP.NET Core 10 using **YARP (Yet Another Reverse Proxy)**, it functions as a centralized gateway for managing client requests and routing them to 6 backend microservices:
+**Gateway** is a production-ready API Gateway for the **English Learning** ecosystem. Built on ASP.NET Core 10 with **YARP (Yet Another Reverse Proxy)**, it dynamically routes client traffic to backend microservices, hosts a React 19 management dashboard, and secures the dashboard surface with Google OAuth + a Gateway-issued admin JWT.
 
-1. **Authentication Service (`auth-service`)**: Handles client authentication, user registration, and JWT token issuance on port `5100`.
-2. **Learning Service (`learning-service`)**: Manages core learning curricula, modules, and courses on port `5101`.
-3. **AI Service (`ai-service`)**: Leverages generative AI for translation, grammar check, and chat features on port `5102`.
-4. **Writing Service (`writing-service`)**: Manages written essays, submissions, and grading pipelines on port `5103`.
-5. **Speaking Service (`speaking-service`)**: Manages spoken responses, audio evaluations, and pronunciations on port `5104`.
-6. **Gamification Service (`gamification-service`)**: Drives system incentives, points, leaderboards, and accomplishments on port `5105`.
-
-Beyond simple request routing, Gateway acts as the security boundary and observer of the microservice ecosystem, handling CORS policies, JWT validation, rate limiting, request logging, tracing, metrics tracking, and serving an interactive React 19 real-time management dashboard.
+Key design decisions:
+- **Proxy traffic is auth pass-through.** Downstream services own authentication and authorization for their own APIs. Gateway strips the group path prefix and forwards `Authorization`/`Cookie` headers untouched.
+- **Google OAuth is only for dashboard identity.** The login flow authenticates the person operating the dashboard, not end-users of the proxied services.
+- **`/api/management/**` requires a Gateway admin JWT** (Bearer token). The SPA and `/health` are always public.
 
 ---
 
 ## 🏛️ Architecture & Data Flow
 
-This project follows the principles of **Clean Architecture**, partitioning concerns across 4 logical layers to guarantee decoupleability, testability, and clarity.
-
 ```text
-                                  ┌───────────────────────────┐
-                                  │   Clients (Mobile / Web)  │
-                                  └─────────────┬─────────────┘
-                                                │ HTTPS requests
-                                                ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 1. PRESENTATION / HOST LAYER                                                           │
-│    Project: src/Gateway                                                                │
-│                                                                                        │
-│    ┌──────────────────────────────────────────────────────────────────────────────┐    │
-│    │ Middleware Pipeline                                                          │    │
-│    │  [Exception Handling] ──► [Request Logging] ──► [CORS] ──► [Auth] ──► [Limits]│    │
-│    └──────────────────────────────────────┬───────────────────────────────────────┘    │
-│                                           │ Evaluated Request                          │
-│                    ┌──────────────────────┴──────────────────────┐                     │
-│                    ▼                                             ▼                     │
-│         ┌─────────────────────┐                       ┌─────────────────────┐          │
-│         │   Management API    │                       │ YARP Reverse Proxy  │          │
-│         │ (/api/management/*) │                       │  (Reverse Routing)  │          │
-│         └──────────┬──────────┘                       └──────────┬──────────┘          │
-└────────────────────┼─────────────────────────────────────────────┼─────────────────────┘
-                     │ Query Metrics / Logs                        │ Proxy Traffic
-                     ▼                                             ▼
-┌────────────────────────────────────────────────────────┐   ┌───────────────────────────┐
-│ 2. APPLICATION LAYER                                   │   │    Microservice Clusters  │
-│    Project: src/Gateway.Application                    │   │                           │
-│                                                        │   │  ┌─────────────────────┐  │
-│  - App Interfaces, Queries, and DTOs                   │   │  │    /api/auth/*      │──► Port 5100 (Auth Service)
-└────────────────────┬───────────────────────────────────┘   │  ├─────────────────────┤  │
-                     │ Implements interfaces                 │  │    /api/learning/*  │──► Port 5101 (Learning Service)
-                     ▼                                       │  ├─────────────────────┤  │
-┌────────────────────────────────────────────────────────┐   │  │    /api/ai/*        │──► Port 5102 (AI Service)
-│ 3. INFRASTRUCTURE LAYER                                │   │  ├─────────────────────┤  │
-│    Project: src/Gateway.Infrastructure                 │   │  │    /api/writing/*   │──► Port 5103 (Writing Service)
-│                                                        │   │  ├─────────────────────┤  │
-│  - LogBuffer (ILogBuffer implementation)               │   │  │    /api/speaking/*  │──► Port 5104 (Speaking Service)
-│  - MetricsTracker (IMetricsTracker implementation)     │   │  ├─────────────────────┤  │
-│  - Serilog Sinks & OpenTelemetry Trace Providers       │   │  │    /api/gamification│──► Port 5105 (Gamification Service)
-└────────────────────┬───────────────────────────────────┘   │  └─────────────────────┘  │
-                     │ Uses abstractions                     └───────────────────────────┘
-                     ▼
-┌────────────────────────────────────────────────────────┐
-│ 4. DOMAIN LAYER                                        │
-│    Project: src/Gateway.Domain                         │
-│                                                        │
-│  - Abstractions: ILogBuffer, IMetricsTracker             │
-│  - Entities: RouteInfo, ClusterInfo, DashboardData     │
-└────────────────────────────────────────────────────────┘
+                              ┌───────────────────────────┐
+                              │   Clients (Mobile / Web)  │
+                              └─────────────┬─────────────┘
+                                            │ HTTPS requests
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────┐
+│ HOST / PRESENTATION LAYER  (src/Gateway)                                       │
+│                                                                                │
+│  Middleware Pipeline                                                           │
+│  [Exception] → [Request Logging] → [EndpointAccessPolicy] → [CORS]            │
+│  → [RateLimiter] → [Auth] → [Authorization]                                   │
+│                                                                                │
+│       ┌──────────────────────┐          ┌──────────────────────┐              │
+│       │  Auth Endpoints      │          │  Management API      │              │
+│       │  /api/auth/*         │          │  /api/management/**  │              │
+│       │  (rate-limited,      │          │  (Bearer JWT +       │              │
+│       │   public challenge)  │          │   rate-limited)      │              │
+│       └──────────────────────┘          └──────────────────────┘              │
+│                                                                                │
+│       ┌──────────────────────┐          ┌──────────────────────┐              │
+│       │  SPA (wwwroot)       │          │  YARP Reverse Proxy  │              │
+│       │  Always anonymous    │          │  Pass-through auth   │              │
+│       └──────────────────────┘          └──────────┬───────────┘              │
+└──────────────────────────────────────────────────── │ ───────────────────────┘
+                                                      │ Proxy Traffic
+                                                      ▼
+                               ┌───────────────────────────────────┐
+                               │  Backend Microservice Clusters    │
+                               │  (downstream services own auth)   │
+                               │                                   │
+                               │  /{group}/{endpoint}/{**rest}     │
+                               │  → strip /{group} prefix          │
+                               │  → forward to destination         │
+                               └───────────────────────────────────┘
+```
+
+### Dashboard Login Flow
+
+```
+FE GET /api/auth/challenge
+  → returns { url: "/api/auth/login?returnUrl=..." }
+
+FE redirects browser to /api/auth/login
+  → server issues Results.Challenge → Google OAuth
+
+Google redirects to /api/auth/google/callback
+  → allowlist check → mint one-time code (60s TTL)
+  → redirect to SPA with ?auth=callback&code=<code>
+
+FE POST /api/auth/exchange { code }
+  → server consumes code → issues Gateway admin JWT
+  → FE stores token in sessionStorage (never cookies)
+
+FE attaches Authorization: Bearer <jwt> on every
+  /api/management/** request
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-Get the gateway and dashboard up and running in minutes.
+### Prerequisites
 
-### 📋 Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [Node.js v18+](https://nodejs.org/) & `npm`
-- [Docker & Docker Compose](https://www.docker.com/) (optional, for full containerized setup)
+- [Node.js v18+](https://nodejs.org/) and `npm`
+- [Docker & Docker Compose](https://www.docker.com/) (optional)
 
-### ⚙️ Step-by-Step Instructions
+### Local Setup
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/gateway.git
-   cd gateway
-   ```
+**1. Clone the repository:**
+```bash
+git clone https://github.com/datnp1003/gateway.git
+cd gateway
+```
 
-2. **Restore and Build the Solution:**
-   Use the .NET CLI to compile all C# projects configured inside [Gateway.sln](file:///home/datnguyen/gateway/Gateway.sln):
-   ```bash
-   dotnet build Gateway.sln
-   ```
+**2. Configure secrets (required for Google OAuth):**
 
-3. **Install Dashboard Dependencies:**
-   Install Node packages required by the Vite-based React management application inside the [dashboard/](file:///home/datnguyen/gateway/dashboard) directory:
-   ```bash
-   cd dashboard
-   npm install
-   cd ..
-   ```
+`appsettings.json` is git-ignored and local-only. Create it under `src/Gateway/` with the Authentication and optional Elasticsearch/ReverseProxy sections shown below. Do not copy `appsettings.Development.json`: it contains overrides only, not a complete base configuration.
 
-4. **Run the gateway natively:**
-   Launch the proxy server in development mode.
-   ```bash
-   dotnet run --project src/Gateway/Gateway.csproj
-   ```
-   The gateway exposes a secure HTTPS endpoint at `https://localhost:7198` and an HTTP endpoint at `http://localhost:5075` as configured in [launchSettings.json](file:///home/datnguyen/gateway/src/Gateway/Properties/launchSettings.json).
+**3. Build the solution:**
+```bash
+dotnet build Gateway.sln
+```
 
-5. **Open the Dashboard:**
-   - **Development Dashboard:** Start the Vite dev server inside [dashboard/](file:///home/datnguyen/gateway/dashboard):
-     ```bash
-     cd dashboard
-     npm run dev
-     ```
-     Open `http://localhost:5173` in your browser. The Vite server automatically proxies management API calls to the gateway.
-   - **Production Built Dashboard:** Once built, the React dashboard is hosted natively by the gateway. Build it and open `http://localhost:5075` (or the configured gateway URL):
-     ```bash
-     cd dashboard
-     npm run build
-     ```
+**4. Install dashboard dependencies:**
+```bash
+cd dashboard && npm install && cd ..
+```
+
+**5. Run the gateway:**
+```bash
+dotnet run --project src/Gateway/Gateway.csproj
+```
+Gateway runs at `http://localhost:5075` (HTTP) and `https://localhost:7198` (HTTPS).
+
+**6. Run the dashboard dev server:**
+```bash
+cd dashboard && npm run dev
+```
+Open `http://localhost:5173`. The Vite dev server proxies `/api` to `http://localhost:5075`.
+
+**7. (Optional) Build the SPA into wwwroot:**
+```bash
+cd dashboard && npm run build
+```
+The built SPA is served by the gateway at `http://localhost:5075`.
 
 ---
 
 ## 📂 Project Structure
 
-Below is the directory structure layout for the solution, mapping folders, projects, and key files:
-
 ```text
 gateway/
-├── Gateway.sln                     # [Gateway.sln](file:///home/datnguyen/gateway/Gateway.sln) solution configuration
-├── Dockerfile                      # Multi-stage [Dockerfile](file:///home/datnguyen/gateway/Dockerfile) for production builds
-├── docker-compose.yml              # [docker-compose.yml](file:///home/datnguyen/gateway/docker-compose.yml) orchestrating gateway & microservices
-├── dashboard/                      # React Admin Panel UI ([dashboard/](file:///home/datnguyen/gateway/dashboard))
-│   ├── public/                     # Static client-side assets
-│   ├── src/                        # React source files
-│   │   ├── assets/                 # SVGs and styling resources
-│   │   ├── components/             # Reusable UI controls and indicators
-│   │   ├── hooks/                  # Custom React hooks (e.g. status polling)
-│   │   ├── App.jsx                 # Main layout and dashboard root ([App.jsx](file:///home/datnguyen/gateway/dashboard/src/App.jsx))
-│   │   ├── index.css               # Main styling rules
-│   │   └── main.jsx                # SPA entry bootstrapper ([main.jsx](file:///home/datnguyen/gateway/dashboard/src/main.jsx))
-│   ├── vite.config.js              # [vite.config.js](file:///home/datnguyen/gateway/dashboard/vite.config.js) configuration containing path proxying & build outDir rules
-│   └── package.json                # Project dependencies, scripts, Oxlint configurations ([package.json](file:///home/datnguyen/gateway/dashboard/package.json))
-├── src/                            # Backend source code
-│   ├── Gateway/                    # Host project, pipelines, routing middlewares ([src/Gateway/](file:///home/datnguyen/gateway/src/Gateway))
-│   │   ├── Endpoints/              # Management API Minimal endpoints ([ManagementEndpoints.cs](file:///home/datnguyen/gateway/src/Gateway/Endpoints/ManagementEndpoints.cs))
-│   │   ├── Middleware/             # Custom exception-handling and logging middlewares
-│   │   │   ├── [ExceptionHandlingMiddleware.cs](file:///home/datnguyen/gateway/src/Gateway/Middleware/ExceptionHandlingMiddleware.cs)
-│   │   │   └── [RequestLoggingMiddleware.cs](file:///home/datnguyen/gateway/src/Gateway/Middleware/RequestLoggingMiddleware.cs)
-│   │   ├── Properties/             # Runtime configurations like [launchSettings.json](file:///home/datnguyen/gateway/src/Gateway/Properties/launchSettings.json)
-│   │   ├── Program.cs              # Global bootstrapper configuring services & HTTP request pipelines ([Program.cs](file:///home/datnguyen/gateway/src/Gateway/Program.cs))
-│   │   └── appsettings.json        # Main configuration file containing JWT and YARP routes ([appsettings.json](file:///home/datnguyen/gateway/src/Gateway/appsettings.json))
-│   ├── Gateway.Domain/             # Pure abstractions, configuration mapping records, interfaces ([src/Gateway.Domain/](file:///home/datnguyen/gateway/src/Gateway.Domain))
-│   │   ├── Interfaces/             # Core interfaces
-│   │   │   ├── [ILogBuffer.cs](file:///home/datnguyen/gateway/src/Gateway.Domain/Interfaces/ILogBuffer.cs)
-│   │   │   └── [IMetricsTracker.cs](file:///home/datnguyen/gateway/src/Gateway.Domain/Interfaces/IMetricsTracker.cs)
-│   │   └── Models/                 # Core record models
-│   │       ├── [ClusterInfo.cs](file:///home/datnguyen/gateway/src/Gateway.Domain/Models/ClusterInfo.cs) (and DestinationInfo)
-│   │       ├── [DashboardData.cs](file:///home/datnguyen/gateway/src/Gateway.Domain/Models/DashboardData.cs)
-│   │       └── [RouteInfo.cs](file:///home/datnguyen/gateway/src/Gateway.Domain/Models/RouteInfo.cs)
-│   ├── Gateway.Infrastructure/     # Service implementations of domain interfaces ([src/Gateway.Infrastructure/](file:///home/datnguyen/gateway/src/Gateway.Infrastructure))
-│   │   └── Services/               # Concrete memory buffer and metrics tracker service implementations
-│   │       ├── [LogBuffer.cs](file:///home/datnguyen/gateway/src/Gateway.Infrastructure/Services/LogBuffer.cs)
-│   │       └── [MetricsTracker.cs](file:///home/datnguyen/gateway/src/Gateway.Infrastructure/Services/MetricsTracker.cs)
-│   └── Gateway.Application/        # Business Logic Core placeholder library ([src/Gateway.Application/](file:///home/datnguyen/gateway/src/Gateway.Application))
-└── tests/                          # Automated tests folder
-    └── Gateway.Tests/              # xUnit-based integration tests project ([tests/Gateway.Tests/](file:///home/datnguyen/gateway/tests/Gateway.Tests))
-        ├── [HealthCheckTests.cs](file:///home/datnguyen/gateway/tests/Gateway.Tests/HealthCheckTests.cs) - Integrations validating health and routing status
-        └── [ProxyTests.cs](file:///home/datnguyen/gateway/tests/Gateway.Tests/ProxyTests.cs) - Proxy authentication policy behavior validations
+├── Gateway.sln                        # Solution configuration
+├── Dockerfile                         # Multi-stage production build
+├── docker-compose.yml                 # Orchestration for gateway + microservices
+├── CHANGELOG.md                       # Project changelog
+├── dashboard/                         # React 19 management SPA
+│   ├── src/
+│   │   ├── components/                # Reusable UI controls
+│   │   ├── hooks/                     # Custom React hooks
+│   │   ├── App.jsx                    # Dashboard root; manages auth state
+│   │   ├── index.css                  # Styles (Tailwind CSS v4)
+│   │   └── main.jsx                   # SPA entry point
+│   ├── vite.config.js                 # Proxy /api → localhost:5075; outDir → wwwroot
+│   └── package.json                   # Dependencies and scripts
+├── src/
+│   ├── Gateway/                       # Host project: pipeline, routing, middleware
+│   │   ├── Authentication/
+│   │   │   ├── ManagementAuth.cs      # Google OAuth + JWT wiring + auth endpoints
+│   │   │   ├── AdminTokenService.cs   # Gateway admin JWT issuance
+│   │   │   └── LoginCodeStore.cs      # In-memory one-time codes (60s TTL)
+│   │   ├── Endpoints/
+│   │   │   └── ManagementEndpoints.cs # /api/management/** CRUD + monitoring
+│   │   ├── Middleware/
+│   │   │   ├── EndpointAccessPolicyMiddleware.cs  # IP blocklist/allowlist + per-endpoint RL
+│   │   │   ├── ExceptionHandlingMiddleware.cs
+│   │   │   └── RequestLoggingMiddleware.cs
+│   │   ├── Properties/launchSettings.json
+│   │   ├── Program.cs                 # Service registration + middleware pipeline
+│   │   ├── appsettings.json           # Local secrets (git-ignored)
+│   │   └── appsettings.Development.json  # Tracked; minimal overrides for development
+│   ├── Gateway.Domain/                # Entities, interfaces, models (no dependencies)
+│   │   ├── Entities/
+│   │   │   ├── ProxyGroup.cs          # Group: path, IP policies, endpoints[]
+│   │   │   └── ProxyEndpoint.cs       # Endpoint: pathPattern, destination, IP policy, RL
+│   │   ├── Interfaces/
+│   │   │   ├── ILogBuffer.cs
+│   │   │   ├── IMetricsTracker.cs
+│   │   │   ├── IProxyConfigRepository.cs
+│   │   │   └── IYarpConfigSyncService.cs
+│   │   └── Models/                    # DTOs: RouteInfo, ClusterInfo, DashboardData
+│   ├── Gateway.Infrastructure/        # EF Core, repositories, services
+│   │   ├── Data/
+│   │   │   ├── GatewayDbContext.cs    # SQLite EF Core context
+│   │   │   └── SeedData.cs            # Schema patching + first-run appsettings seed
+│   │   ├── Repositories/
+│   │   │   └── ProxyConfigRepository.cs
+│   │   └── Services/
+│   │       ├── LogBuffer.cs
+│   │       ├── MetricsTracker.cs
+│   │       └── YarpConfigSyncService.cs  # DB → YARP InMemoryConfigProvider sync
+│   └── Gateway.Application/           # Placeholder application layer
+└── tests/
+    └── Gateway.Tests/                 # xUnit integration tests (WebApplicationFactory)
+        ├── DynamicProxyTests.cs
+        ├── GroupAccessPolicyTests.cs
+        ├── GroupKillSwitchTests.cs
+        └── ManagementAuthTests.cs
 ```
 
 ---
 
 ## ✨ Features
 
-- 🌉 **YARP Reverse Proxy Routing**: Declarative, high-performance HTTP proxy routing using Microsoft YARP. Supports prefix-trimming path transformations, load-balancing, and connection forwarding.
-- 🔐 **Global JWT Authentication**: Centralized access checking at the gateway boundary. Validates incoming JWT headers using HMAC-SHA256 tokens and enforces standard authorization policies.
-- 🚦 **Dynamic Rate Limiting**: Built-in ASP.NET Core rate limiting middleware executing fixed-window policy rules:
-  - `fixed` policy (general APIs): 100 requests per minute with a queue limit of 10.
-  - `auth` policy (authentication routes): 20 requests per minute with a queue limit of 5.
-- 📂 **Structured Diagnostics Logging (Serilog)**: Integrates Serilog configured with dual outputs (Console and daily-rolling file logs under `/logs/`). Includes custom [RequestLoggingMiddleware](file:///home/datnguyen/gateway/src/Gateway/Middleware/RequestLoggingMiddleware.cs) recording timing metrics and endpoint responses.
-- 🔭 **OpenTelemetry Observability**: Telemetry tracing configured via OpenTelemetry ASP.NET Core instrumentation, allowing trace exportation and system tracking.
-- 🛠️ **Real-time Management API**: Exposes specialized endpoints under `/api/management/` providing insight into the reverse proxy state, log buffers, and gateway health metrics.
-- 💻 **Interactive React Dashboard**: Built on React 19 and Tailwind CSS v4, the dashboard displays metrics, cluster/route lists, and real-time logs fetched straight from memory using custom React components.
+- 🌉 **YARP Reverse Proxy (dynamic)**: Routes are built from SQLite at startup and updated in-memory on every CRUD operation — no restart needed. One cluster per endpoint; group path is stripped as the forwarding prefix.
+- 🔐 **Dashboard Auth (Google OAuth → Admin JWT)**: FE-driven login flow. Google OAuth identifies the dashboard operator only. A one-time code is exchanged for a Gateway-issued JWT stored in sessionStorage; Bearer token is required on all `/api/management/**` calls.
+- 🔓 **Proxy Auth Pass-Through**: YARP proxy routes carry no authorization policy. Downstream services validate their own tokens. `Authorization`/`Cookie` headers are forwarded untouched.
+- 🛡️ **Per-Endpoint & Per-Group Access Policies**: Runtime IP blocklist, IP allowlist (exact IPs and IPv4 CIDRs; `::1` supported), and per-endpoint rate limits enforced by `EndpointAccessPolicyMiddleware` before YARP routing.
+- 🚦 **Rate Limiting Policies**:
+  - `management`: 100 req/min per IP (management API)
+  - `auth`: 20 req/min per IP (auth endpoints)
+  - `proxy`: 500 req/min per IP (proxied traffic, via YARP route metadata)
+- 📂 **Structured Logging (Serilog)**: Console + daily rolling file. Optional Elasticsearch sink enabled via `Elasticsearch:Enabled` + `Elasticsearch:Url`. Dashboard traffic (`/api/management*`, `/health`, SPA assets) is excluded from the log buffer and metrics.
+- 🔭 **OpenTelemetry Tracing**: ASP.NET Core instrumentation with console exporter.
+- 💻 **React 19 Dashboard**: Groups tab, Endpoints tab with modal CRUD, enable/disable toggles, IP policy controls, rate-limit badges. Token stored in sessionStorage; FE owns login, denied, OAuth-error, and expired-session states; no refresh token is issued.
+- 📈 **Metrics & Observability**: Total requests, req/sec, error rate, avg/P95 latency, active requests, top routes, status code breakdown, recent log buffer.
 
 ---
 
-## 🔌 API Endpoints
+## 🔐 Authentication Details
 
-The Gateway exposes management endpoints for monitoring proxy health, active routing, and live request statistics.
+### Proxy Traffic
 
-| Method | Endpoint | Description | Response Model | Auth Required |
-|:---|:---|:---|:---|:---|
-| `GET` | `/health` | Check overall application health status. | Plain text (`Healthy`) | No |
-| `GET` | `/api/management/health` | Retrieves detailed system statistics, uptime, and request metrics. | JSON | No |
-| `GET` | `/api/management/routes` | Returns the list of active YARP configured routes, target clusters, and auth policies. | Array of [RouteInfo](file:///home/datnguyen/gateway/src/Gateway.Domain/Models/RouteInfo.cs) | No |
-| `GET` | `/api/management/clusters` | Returns the list of destination clusters, and their configured backend addresses. | Array of [ClusterInfo](file:///home/datnguyen/gateway/src/Gateway.Domain/Models/ClusterInfo.cs) | No |
-| `GET` | `/api/management/logs` | Fetches recent entries cached in the gateway's rolling memory buffer (max 500 logs). | Array of JSON strings | No |
-| `GET` | `/api/management/metrics` | Retrieves gateway request count totals and system performance measurements. | JSON | No |
-| `GET` | `/api/management/dashboard` | Consolidated overview designed for the dashboard (includes system metrics, routes, clusters, and recent logs). | [DashboardData](file:///home/datnguyen/gateway/src/Gateway.Domain/Models/DashboardData.cs) | No |
+Gateway applies **no authorization policy** to YARP proxy routes. Downstream services are responsible for validating their own bearer tokens or session cookies. Gateway forwards all `Authorization` and `Cookie` headers to destination untouched.
 
-> [!NOTE]
-> The management API paths are public to facilitate simple scraping by Prometheus or other external telemetry targets. If deploying to production, secure these endpoints by adding appropriate network constraints or custom security policy rules.
+### Dashboard / Management API
+
+Only `/api/management/**` requires authentication. The flow:
+
+| Step | Who | What |
+|------|-----|------|
+| 1. Challenge | FE | `GET /api/auth/challenge` → returns login URL |
+| 2. Login | Browser | `GET /api/auth/login` → `Results.Challenge` → Google |
+| 3. Callback | Google → Gateway | `GET /api/auth/google/callback` → email allowlist → one-time code |
+| 4. Exchange | FE | `POST /api/auth/exchange { code }` → admin JWT |
+| 5. Store | FE | JWT in `sessionStorage` |
+| 6. API calls | FE | `Authorization: Bearer <jwt>` on all `/api/management/**` |
+
+The JWT is issued by `AdminTokenService` (HMAC-SHA256, configurable TTL, default 60 min). No refresh token, no server-side revocation for MVP.
+
+**Dev bypass**: Set `Authentication:DevBypass=true` in `appsettings.Development.json`. The management API is effectively open; the FE still goes through the code→JWT flow against a `dev@local` identity.
 
 ---
 
 ## ⚙️ Configuration
 
-The Gateway's settings are configured in [appsettings.json](file:///home/datnguyen/gateway/src/Gateway/appsettings.json).
+### File Tracking
 
-### 🔑 JWT Configuration
-Controls how the gateway validates bearer tokens passed by clients:
+| File | Tracked in git | Purpose |
+|------|---------------|---------|
+| `appsettings.json` | **No** (git-ignored) | Local secrets: Google OAuth creds, JWT secret, Elasticsearch |
+| `appsettings.Development.json` | **Yes** | Dev overrides: log levels, dev cluster addresses |
+
+> [!IMPORTANT]
+> `appsettings.json` is in `.gitignore`. Never commit real secrets. Use environment variables (`Authentication__Google__ClientId`, `Authentication__Jwt__Secret`, etc.) in CI/CD and production.
+
+### Key Configuration Sections
+
+**Google OAuth + Admin JWT** (in `appsettings.json` / environment):
 ```json
-"Jwt": {
-  "Issuer": "EnglishLearning.Auth",
-  "Audience": "EnglishLearning.Gateway",
-  "Secret": "PLACEHOLDER_KEY_AT_LEAST_32_CHARS_LONG_CHANGE_IN_ENV"
+"Authentication": {
+  "DevBypass": false,
+  "AllowedEmails": "admin@example.com,another@example.com",
+  "Google": {
+    "ClientId": "<your-google-client-id>",
+    "ClientSecret": "<your-google-client-secret>"
+  },
+  "Jwt": {
+    "Issuer": "Gateway.Admin",
+    "Audience": "Gateway.Dashboard",
+    "Secret": "<min-32-byte-secret>",
+    "AccessTokenMinutes": 60
+  }
 }
 ```
 
-### 🌉 Reverse Proxy (YARP) Configuration
-Declares the backend services routing setup. Below is an example routing configuration mapping `/api/auth/*` requests to the authentication service cluster:
+Google OAuth requires the authorized redirect URI:
+```
+http://localhost:5075/signin-google      ← dev (native)
+https://your-production-domain/signin-google
+```
+
+**Elasticsearch** (optional, in `appsettings.json`):
+```json
+"Elasticsearch": {
+  "Enabled": false,
+  "Url": "http://localhost:9200",
+  "IndexFormat": "gateway-logs-{0:yyyy.MM}"
+}
+```
+
+**Initial proxy seed** (in `appsettings.json` → `ReverseProxy`):
+
+On first run with an empty database, `SeedData.SeedFromAppSettingsAsync` reads the `ReverseProxy.Routes` and `ReverseProxy.Clusters` sections and creates a default group and endpoints in SQLite. Subsequent runs ignore these sections — the database is authoritative.
+
+Example seed-only snippet:
 ```json
 "ReverseProxy": {
   "Routes": {
     "auth-api": {
       "ClusterId": "auth-cluster",
-      "Match": {
-        "Path": "/api/auth/{**catch-all}"
-      },
-      "Transforms": [
-        { "PathRemovePrefix": "/api/auth" }
-      ]
+      "Match": { "Path": "/api/auth/{**catch-all}" },
+      "Transforms": [{ "PathRemovePrefix": "/api/auth" }]
     }
   },
   "Clusters": {
     "auth-cluster": {
       "Destinations": {
-        "auth-service": {
-          "Address": "http://localhost:5100/"
-        }
+        "auth-service": { "Address": "http://localhost:5100/" }
       }
     }
   }
@@ -256,89 +307,167 @@ Declares the backend services routing setup. Below is an example routing configu
 
 ---
 
+## 🗂️ Dynamic Proxy Structure
+
+YARP routes are loaded from SQLite, not from `appsettings.json` at runtime. The data model is a **Group → Endpoint** hierarchy:
+
+```
+/{group.Path}{endpoint.PathPattern}/{**catch-all}
+```
+
+| Level | Fields | Example |
+|-------|--------|---------|
+| **Group** | `Path`, `BlockedIpRanges`, `AllowedIpRanges`, `IsEnabled` | path=`prot` |
+| **Endpoint** | `PathPattern`, `Destination`, `RequiresAuth`, `RateLimitPerMinute`, `BlockedIpRanges`, `AllowedIpRanges`, `IsEnabled` | pathPattern=`/api/{**catch-all}` |
+| **Full YARP Route** | auto-composed at sync | `/prot/api/{**catch-all}` → strips `/prot` → upstream |
+
+### Example Structure
+
+```
+Group "prot"  (path="prot")
+  ├── Endpoint "api"   (pathPattern="/api/{**catch-all}",   destination="http://localhost:5101/")
+  ├── Endpoint "auth"  (pathPattern="/auth/{**catch-all}",  destination="http://localhost:5100/")
+  └── Endpoint "cdn"   (pathPattern="/cdn/{**catch-all}",   destination="http://cdn-service/")
+
+Group "edux"  (path="edux")
+  ├── Endpoint "api"   (pathPattern="/api/{**catch-all}",   destination="http://localhost:5200/")
+  └── Endpoint "cms"   (pathPattern="/cms/{**catch-all}",   destination="http://cms-service/")
+```
+
+YARP strips `/{group.Path}` so backends always receive clean paths. Each endpoint gets its own cluster (one-to-one mapping).
+
+### Access Policy Evaluation (per request)
+
+```
+EndpointAccessPolicyMiddleware
+  ├── Skip: /api/management*, /health, /assets, /@vite, /src, /
+  ├── Find matching ProxyEndpoint by path
+  ├── Group-level: BlockedIpRanges → 403
+  ├── Group-level: AllowedIpRanges (if set, must match) → 403
+  ├── Endpoint-level: BlockedIpRanges → 403
+  ├── Endpoint-level: AllowedIpRanges (if set, must match) → 403
+  └── Endpoint-level: RateLimitPerMinute (sliding window per IP) → 429
+```
+
+IP values are comma-separated and support exact IPs and IPv4 CIDR notation. `::1` is matched as localhost exact.
+
+---
+
+## 🔌 Management API Reference
+
+All endpoints under `/api/management/**` require `Authorization: Bearer <admin-jwt>`.
+
+### Monitoring
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check (public, plain text `Healthy`) |
+| `GET` | `/api/management/health` | Uptime, request metrics (auth required) |
+| `GET` | `/api/management/routes` | Active YARP routes |
+| `GET` | `/api/management/clusters` | Active YARP clusters |
+| `GET` | `/api/management/logs` | Recent log buffer (max 500, param `?count=`) |
+| `GET` | `/api/management/metrics` | Request totals, latency, error rate |
+| `GET` | `/api/management/metrics/history` | Metric snapshots (max 300, param `?count=`) |
+| `GET` | `/api/management/dashboard` | Consolidated dashboard snapshot |
+
+### Groups CRUD
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/management/groups` | List all groups (with endpoints) |
+| `GET` | `/api/management/groups/{id}` | Get group by ID |
+| `POST` | `/api/management/groups` | Create group |
+| `PUT` | `/api/management/groups/{id}` | Update group |
+| `DELETE` | `/api/management/groups/{id}` | Delete group |
+
+### Endpoints CRUD
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/management/endpoints` | List endpoints (optional `?groupId=`) |
+| `POST` | `/api/management/endpoints` | Create endpoint |
+| `PUT` | `/api/management/endpoints/{id}` | Update endpoint |
+| `DELETE` | `/api/management/endpoints/{id}` | Delete endpoint |
+
+### Sync
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/management/sync` | Force YARP reload from database |
+
+> [!NOTE]
+> YARP syncs automatically on every CRUD mutation. `POST /sync` is a manual override for cases where the database was modified externally.
+
+### Auth Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/auth/challenge` | Returns the login URL |
+| `GET` | `/api/auth/login` | Initiates Google OAuth flow |
+| `GET` | `/api/auth/google/callback` | OAuth callback; mints one-time code |
+| `POST` | `/api/auth/exchange` | Exchanges code for admin JWT |
+| `GET` | `/api/auth/me` | Returns current identity from Bearer JWT |
+| `POST` | `/api/auth/logout` | No-op (stateless); FE discards token |
+
+---
+
 ## 🛠️ Development
 
-Follow these steps to work on the Gateway and the Management Dashboard simultaneously:
+### Running Tests
 
-### 1. Run the Gateway Natively
-Start the gateway using the .NET CLI. By default, this will run on ports `5075` (HTTP) and `7198` (HTTPS):
 ```bash
-dotnet run --project src/Gateway/Gateway.csproj
+dotnet test Gateway.sln
 ```
 
-### 2. Run the React Dashboard Dev Server
-The React project uses Vite for Hot Module Replacement (HMR). Go to [dashboard/](file:///home/datnguyen/gateway/dashboard) and run the dev server:
-```bash
-cd dashboard
-npm run dev
-```
-This runs Vite on `http://localhost:5173`. According to [vite.config.js](file:///home/datnguyen/gateway/dashboard/vite.config.js), any request to `/api` is proxied to `http://localhost:5000` (which is mapped to the Docker Compose host port). During native local development, you can modify `vite.config.js` to point to `http://localhost:5075` to proxy directly to the natively running C# Gateway.
+Tests use `WebApplicationFactory` with an isolated in-memory SQLite database per test class. The suite covers:
 
-### 3. Deploy/Build the SPA Assets
-To compile the dashboard assets and host them directly through the Gateway:
-```bash
-cd dashboard
-npm run build
-```
-This compiles the files into [src/Gateway/wwwroot](file:///home/datnguyen/gateway/src/Gateway/wwwroot), which is served automatically by the ASP.NET Core pipeline via `app.UseStaticFiles()` (configured in [Program.cs](file:///home/datnguyen/gateway/src/Gateway/Program.cs)).
+- **ManagementAuthTests**: challenge/login redirect, exchange flow (dev bypass + real JWT), `/me` endpoint, management API 401/403 enforcement, `DevBypass` behavior.
+- **DynamicProxyTests**: group/endpoint CRUD, YARP sync, seed from appsettings.
+- **GroupAccessPolicyTests**: blocklist → 403, allowlist miss → 403, allowlist hit → 200, CIDR matching, per-endpoint rate-limit → 429.
+- **GroupKillSwitchTests**: enable/disable toggles for groups and endpoints.
 
-### 4. Running Automated Tests
-Run integration tests located in [tests/Gateway.Tests](file:///home/datnguyen/gateway/tests/Gateway.Tests) using:
-```bash
-dotnet test
+### Dev Bypass Mode
+
+Set in `appsettings.Development.json`:
+```json
+"Authentication": {
+  "DevBypass": true
+}
 ```
-These tests utilize `WebApplicationFactory` to spin up the Gateway in-memory, asserting that public routes forward correctly, protected routes return `401 Unauthorized` without a valid token, and the `/health` endpoint is functioning.
+
+The management API skips JWT enforcement. The FE still obtains a JWT via the code flow, but the server accepts any or no token. **Do not enable in production.**
+
+### Vite Proxy
+
+`dashboard/vite.config.js` proxies `/api` to `http://localhost:5075`. If you run the gateway on a different port, update this file.
 
 ---
 
 ## 🐳 Docker Deployment
 
-The gateway comes equipped with container configurations for both build and deployment orchestration.
-
-### Dockerfile
-The project uses a multi-stage [Dockerfile](file:///home/datnguyen/gateway/Dockerfile) referencing:
-- `mcr.microsoft.com/dotnet/sdk:10.0` as the build environment.
-- `mcr.microsoft.com/dotnet/aspnet:10.0` as the final ASP.NET runtime, exposing port `8080` (mapped internally to `ASPNETCORE_URLS=http://+:8080`).
-
-### Docker Compose
-To build and spin up the gateway along with the associated auth-service, learning-service, and ai-service clusters, use [docker-compose.yml](file:///home/datnguyen/gateway/docker-compose.yml):
-
 ```yaml
-# Build and run the entire gateway stack in detached mode
+# Build and run in detached mode
 docker-compose up -d --build
 
-# Verify all services are up and running
-docker-compose ps
-
-# Follow logs from the gateway service container
+# Follow gateway logs
 docker-compose logs -f gateway
 
-# Stop and remove containers
+# Stop
 docker-compose down
 ```
 
-The gateway container will expose port `5000` to the host machine. You can access the gateway APIs or the embedded dashboard at `http://localhost:5000`.
+The gateway container exposes port `5000` to the host.
 
 > [!WARNING]
-> Before running docker-compose in a staging or production environment, make sure to replace the default JWT secret key in the environment variables (e.g. using `Jwt__Secret`).
-
----
-
-## 📅 Changelog
-
-### [v1.0.0] - 2026-07-08
-#### Added
-- 🚀 Initial project release with all features.
-- 🌉 YARP reverse proxy configurations routing traffic to 6 microservices (`auth`, `learning`, `ai`, `writing`, `speaking`, `gamification`).
-- 🔐 JWT validation handler integrating token security at the API gateway layer.
-- 🚦 Fixed-window and auth-window Rate Limiting policies.
-- 📝 Diagnostic logging via Serilog and tracing instrumentation via OpenTelemetry.
-- 🛠️ Management REST API providing routes, clusters, buffer logs, and metrics metadata.
-- 💻 Real-time SPA dashboard created with React 19, Tailwind CSS v4, and Vite.
-- 🧪 xUnit integration tests validating route authentication and gateway health.
+> Set all secrets via environment variables, never hardcode in image layers:
+> - `Authentication__Google__ClientId`
+> - `Authentication__Google__ClientSecret`
+> - `Authentication__Jwt__Secret` (min 32 bytes)
+> - `Authentication__AllowedEmails`
+> - `Elasticsearch__Url` (if enabled)
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

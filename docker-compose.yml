@@ -4,11 +4,20 @@ services:
     ports:
       - "5000:8080"
     environment:
-      - Jwt__Secret=${JWT_SECRET:-CHANGE_ME_MINIMUM_32_CHARACTERS_LONG_KEY}
-      - Jwt__Issuer=EnglishLearning.Auth
-      - Jwt__Audience=EnglishLearning.Gateway
+      # Admin JWT signing (Authentication:Jwt:* in code). No baked-in default:
+      # compose fails fast when the host does not provide the secret.
+      - Authentication__Jwt__Secret=${JWT_SECRET:?JWT_SECRET is required (32+ chars)}
+      - Authentication__Jwt__Issuer=EnglishLearning.Auth
+      - Authentication__Jwt__Audience=EnglishLearning.Gateway
+      # Google OAuth for the management dashboard + admin email allowlist.
+      - Authentication__Google__ClientId=${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
+      - Authentication__Google__ClientSecret=${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
+      - Authentication__AllowedEmails=${GATEWAY_ALLOWED_EMAILS:?GATEWAY_ALLOWED_EMAILS is required (comma-separated)}
+      # SQLite on the persistent volume below; route config survives restarts.
+      - ConnectionStrings__Gateway=Data Source=/app/data/gateway.db
     volumes:
       - ./logs:/app/logs
+      - gateway-data:/app/data
     networks:
       - gateway-net
     restart: unless-stopped
@@ -39,6 +48,9 @@ services:
     networks:
       - gateway-net
     restart: unless-stopped
+
+volumes:
+  gateway-data:
 
 networks:
   gateway-net:

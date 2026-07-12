@@ -16,11 +16,22 @@ public record LogEntry(
     string Message,
     string? Path,
     int? StatusCode,
-    double? DurationMs
+    double? DurationMs,
+    string? Method = null,
+    string? ClientIp = null,
+    string? Destination = null,
+    string? RequestId = null
 );
 
 public record ProxyMetrics(
     int TotalRequests,
     Dictionary<string, int> StatusCodes,
-    Dictionary<string, int> RoutesHit
+    Dictionary<string, int> RoutesHit,
+    double RequestsPerSecond = 0,
+    double ErrorRate = 0,
+    double AvgLatencyMs = 0,
+    double P95LatencyMs = 0,
+    int ActiveRequests = 0,
+    List<KeyValuePair<string, int>> TopRoutes = null!,
+    List<KeyValuePair<string, int>> TopStatusCodes = null!
 );
