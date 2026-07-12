@@ -1,5 +1,7 @@
+using System.Net;
 using Serilog;
 using Serilog.Sinks.Elasticsearch;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using OpenTelemetry.Trace;
@@ -42,8 +44,12 @@ try
     Log.Logger = loggerConfig.CreateLogger();
 
     // ─── SQLite + EF Core ───
+    // Path is configurable (env ConnectionStrings__Gateway) so deployments can
+    // point at a persistent volume instead of the ephemeral container FS.
+    var gatewayConnectionString = builder.Configuration.GetConnectionString("Gateway")
+        ?? "Data Source=gateway.db";
     builder.Services.AddDbContext<GatewayDbContext>(options =>
-        options.UseSqlite("Data Source=gateway.db"));
+        options.UseSqlite(gatewayConnectionString));
 
     // ─── YARP with InMemoryConfig (dynamic, no appsettings dependency) ───
     var yarpConfig = new InMemoryConfigProvider(
@@ -58,6 +64,10 @@ try
     // ─── Repository + Config Sync ───
     builder.Services.AddScoped<IProxyConfigRepository, ProxyConfigRepository>();
     builder.Services.AddScoped<IYarpConfigSyncService, YarpConfigSyncService>();
+    // Sync lock must outlive scopes: serializes syncs across concurrent requests.
+    builder.Services.AddSingleton<YarpConfigSyncCoordinator>();
+    // Access-policy data snapshot: written by sync, read lock-free per request.
+    builder.Services.AddSingleton<EndpointPolicySnapshot>();
 
     // ─── Dashboard services ───
     builder.Services.AddSingleton<ILogBuffer, LogBuffer>();
@@ -170,6 +180,37 @@ try
     }
 
     // ─── Middleware Pipeline (order matters!) ───
+
+    // Forwarded headers first, so IP-based policies and rate limiting see the
+    // real client behind a reverse proxy. Only explicitly configured hops are
+    // trusted; with no configuration X-Forwarded-For is ignored entirely.
+    var trustedProxies = builder.Configuration
+        .GetSection("ForwardedHeaders:TrustedProxies").Get<string[]>() ?? [];
+    var trustedNetworks = builder.Configuration
+        .GetSection("ForwardedHeaders:TrustedNetworks").Get<string[]>() ?? [];
+    if (trustedProxies.Length > 0 || trustedNetworks.Length > 0)
+    {
+        var forwardedOptions = new ForwardedHeadersOptions
+        {
+            ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+        };
+        foreach (var proxy in trustedProxies)
+        {
+            if (!IPAddress.TryParse(proxy, out var proxyIp))
+                throw new InvalidOperationException(
+                    $"ForwardedHeaders:TrustedProxies contains an invalid IP address: '{proxy}'");
+            forwardedOptions.KnownProxies.Add(proxyIp);
+        }
+        foreach (var network in trustedNetworks)
+        {
+            if (!System.Net.IPNetwork.TryParse(network, out var net))
+                throw new InvalidOperationException(
+                    $"ForwardedHeaders:TrustedNetworks contains an invalid CIDR range: '{network}'");
+            forwardedOptions.KnownIPNetworks.Add(net);
+        }
+        app.UseForwardedHeaders(forwardedOptions);
+    }
+
     app.UseMiddleware<Gateway.Middleware.ExceptionHandlingMiddleware>();
     app.UseMiddleware<Gateway.Middleware.RequestLoggingMiddleware>();
     app.UseMiddleware<Gateway.Middleware.EndpointAccessPolicyMiddleware>();
@@ -198,9 +239,9 @@ try
             spa.UseStaticFiles();
         });
 
-    // YARP reverse proxy handles all other routes (with per-IP rate limiting)
+    // YARP reverse proxy handles all other routes; every generated route sets
+    // RouteConfig.RateLimiterPolicy = "proxy" (see YarpConfigSyncService).
     app.MapReverseProxy();
-    // NOTE: "proxy" rate limit policy applied via YARP config's per-route metadata
 
     app.Run();
 }

@@ -103,6 +103,9 @@ public static class ManagementEndpoints
 
         groups.MapPost("/", async (CreateGroupRequest req, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
+            if (ValidateGroupFields(req.Name, req.Path, isCreate: true) is { } error)
+                return Results.BadRequest(new { error });
+
             var group = new ProxyGroup
             {
                 Name = req.Name,
@@ -111,13 +114,24 @@ public static class ManagementEndpoints
                 BlockedIpRanges = req.BlockedIpRanges,
                 AllowedIpRanges = req.AllowedIpRanges,
             };
-            var created = await repo.CreateGroupAsync(group, ct);
+            ProxyGroup created;
+            try
+            {
+                created = await repo.CreateGroupAsync(group, ct);
+            }
+            catch (DbUpdateException)
+            {
+                return Results.Conflict(new { error = "A group with the same name or path already exists." });
+            }
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Created($"/api/management/groups/{created.Id}", created);
         });
 
         groups.MapPut("/{id:guid}", async (Guid id, UpdateGroupRequest req, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
+            if (ValidateGroupFields(req.Name, req.Path, isCreate: false) is { } error)
+                return Results.BadRequest(new { error });
+
             var existing = await repo.GetGroupByIdAsync(id, ct);
             if (existing is null) return Results.NotFound();
             if (req.Name != null) existing.Name = req.Name;
@@ -129,14 +143,29 @@ public static class ManagementEndpoints
                 existing.BlockedIpRanges = string.IsNullOrWhiteSpace(req.BlockedIpRanges) ? null : req.BlockedIpRanges;
             if (req.AllowedIpRanges != null)
                 existing.AllowedIpRanges = string.IsNullOrWhiteSpace(req.AllowedIpRanges) ? null : req.AllowedIpRanges;
-            var updated = await repo.UpdateGroupAsync(existing, ct);
+            ProxyGroup updated;
+            try
+            {
+                updated = await repo.UpdateGroupAsync(existing, ct);
+            }
+            catch (DbUpdateException)
+            {
+                return Results.Conflict(new { error = "A group with the same name or path already exists." });
+            }
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Ok(updated);
         });
 
         groups.MapDelete("/{id:guid}", async (Guid id, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
-            await repo.DeleteGroupAsync(id, ct);
+            try
+            {
+                await repo.DeleteGroupAsync(id, ct);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
             await sync.SyncFromDatabaseAsync(ct);
             return Results.NoContent();
         });
@@ -155,6 +184,17 @@ public static class ManagementEndpoints
 
         endpoints.MapPost("/", async (CreateEndpointRequest req, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
+            if (ValidateEndpointFields(req.Name, req.PathPattern, req.Destination,
+                    req.RemovePrefix, req.RateLimitPerMinute, isCreate: true) is { } error)
+                return Results.BadRequest(new { error });
+            if (await repo.GetGroupByIdAsync(req.GroupId, ct) is null)
+                return Results.BadRequest(new { error = $"Group {req.GroupId} does not exist." });
+            // No DB unique index on endpoints (seeding can legitimately produce
+            // duplicates), so uniqueness is enforced here at the API boundary.
+            var siblings = await repo.GetEndpointsByGroupAsync(req.GroupId, ct);
+            if (siblings.Any(e => e.PathPattern == req.PathPattern))
+                return Results.Conflict(new { error = "An endpoint with the same path pattern already exists in this group." });
+
             var endpoint = new ProxyEndpoint
             {
                 GroupId = req.GroupId,
@@ -174,6 +214,10 @@ public static class ManagementEndpoints
 
         endpoints.MapPut("/{id:guid}", async (Guid id, UpdateEndpointRequest req, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
+            if (ValidateEndpointFields(req.Name, req.PathPattern, req.Destination,
+                    req.RemovePrefix, req.RateLimitPerMinute, isCreate: false) is { } error)
+                return Results.BadRequest(new { error });
+
             var existing = await repo.GetEndpointsByGroupAsync(Guid.Empty, ct);
             var ep = existing.FirstOrDefault(e => e.Id == id);
             if (ep is null)
@@ -183,15 +227,26 @@ public static class ManagementEndpoints
                 ep = allGroups.SelectMany(g => g.Endpoints).FirstOrDefault(e => e.Id == id);
             }
             if (ep is null) return Results.NotFound();
+            if (req.PathPattern != null)
+            {
+                var siblings = await repo.GetEndpointsByGroupAsync(ep.GroupId, ct);
+                if (siblings.Any(e => e.Id != id && e.PathPattern == req.PathPattern))
+                    return Results.Conflict(new { error = "An endpoint with the same path pattern already exists in this group." });
+            }
             if (req.Name != null) ep.Name = req.Name;
             if (req.PathPattern != null) ep.PathPattern = req.PathPattern;
             if (req.Destination != null) ep.Destination = req.Destination;
             if (req.RemovePrefix != null) ep.RemovePrefix = req.RemovePrefix;
             if (req.RequiresAuth.HasValue) ep.RequiresAuth = req.RequiresAuth.Value;
             if (req.IsEnabled.HasValue) ep.IsEnabled = req.IsEnabled.Value;
-            ep.RateLimitPerMinute = req.RateLimitPerMinute;
-            ep.BlockedIpRanges = req.BlockedIpRanges;
-            ep.AllowedIpRanges = req.AllowedIpRanges;
+            // Same partial-update contract as groups: null = leave unchanged;
+            // empty string (or zero for the rate limit) = clear the policy.
+            if (req.RateLimitPerMinute.HasValue)
+                ep.RateLimitPerMinute = req.RateLimitPerMinute.Value == 0 ? null : req.RateLimitPerMinute;
+            if (req.BlockedIpRanges != null)
+                ep.BlockedIpRanges = string.IsNullOrWhiteSpace(req.BlockedIpRanges) ? null : req.BlockedIpRanges;
+            if (req.AllowedIpRanges != null)
+                ep.AllowedIpRanges = string.IsNullOrWhiteSpace(req.AllowedIpRanges) ? null : req.AllowedIpRanges;
             var updated = await repo.UpdateEndpointAsync(ep, ct);
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Ok(updated);
@@ -199,7 +254,14 @@ public static class ManagementEndpoints
 
         endpoints.MapDelete("/{id:guid}", async (Guid id, IProxyConfigRepository repo, IYarpConfigSyncService sync, CancellationToken ct) =>
         {
-            await repo.DeleteEndpointAsync(id, ct);
+            try
+            {
+                await repo.DeleteEndpointAsync(id, ct);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
             await sync.SyncFromDatabaseAsync(ct);
             return Results.NoContent();
         });
@@ -210,6 +272,52 @@ public static class ManagementEndpoints
             await sync.SyncFromDatabaseAsync(ct);
             return Results.Ok(new { message = "YARP synced from database" });
         });
+    }
+
+    // ─── Minimal boundary validation (returns an error message, or null if valid) ───
+    // On create the fields are required; on update only provided (non-null)
+    // fields are checked, matching the partial-update contract.
+
+    private static string? ValidateGroupFields(string? name, string? path, bool isCreate)
+    {
+        if (isCreate && string.IsNullOrWhiteSpace(name))
+            return "name is required.";
+        if (name is not null && (string.IsNullOrWhiteSpace(name) || name.Length > 200))
+            return "name must be a non-empty string of at most 200 characters.";
+        if (isCreate && string.IsNullOrWhiteSpace(path))
+            return "path is required.";
+        if (path is not null &&
+            (string.IsNullOrWhiteSpace(path) || path.Length > 200 ||
+             path.Any(char.IsWhiteSpace) || path.Contains('{') || path.Contains('}')))
+            return "path must be non-empty, at most 200 characters, without whitespace or braces.";
+        return null;
+    }
+
+    private static string? ValidateEndpointFields(
+        string? name, string? pathPattern, string? destination,
+        string? removePrefix, int? rateLimitPerMinute, bool isCreate)
+    {
+        if (isCreate && string.IsNullOrWhiteSpace(name))
+            return "name is required.";
+        if (name is not null && (string.IsNullOrWhiteSpace(name) || name.Length > 200))
+            return "name must be a non-empty string of at most 200 characters.";
+        if (isCreate && string.IsNullOrWhiteSpace(pathPattern))
+            return "pathPattern is required.";
+        if (pathPattern is not null && (!pathPattern.StartsWith('/') || pathPattern.Length > 500))
+            return "pathPattern must start with '/' and be at most 500 characters.";
+        if (isCreate && string.IsNullOrWhiteSpace(destination))
+            return "destination is required.";
+        if (destination is not null &&
+            (!Uri.TryCreate(destination, UriKind.Absolute, out var uri) ||
+             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)))
+            return "destination must be an absolute http:// or https:// URL.";
+        if (!string.IsNullOrEmpty(removePrefix) && !removePrefix.StartsWith('/'))
+            return "removePrefix must start with '/'.";
+        // 0 clears the limit on update; a configured limit must be 1..1,000,000.
+        var minRateLimit = isCreate ? 1 : 0;
+        if (rateLimitPerMinute is { } limit && (limit < minRateLimit || limit > 1_000_000))
+            return $"rateLimitPerMinute must be between {minRateLimit} and 1000000.";
+        return null;
     }
 }
 

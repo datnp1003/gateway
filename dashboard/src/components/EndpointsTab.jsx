@@ -537,16 +537,18 @@ function EnabledToggle({ endpoint, onToggled }) {
     setBusy(true)
     try {
       // Send full payload to avoid clearing existing policy fields
-      await fetch(`/api/management/endpoints/${endpoint.id}`, {
+      const res = await fetch(`/api/management/endpoints/${endpoint.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
         credentials: "include",
         body: JSON.stringify(buildFullPayload(endpoint, { isEnabled: !endpoint.isEnabled })),
       })
+      if (!res.ok) throw new Error(await res.text())
       onToggled()
-    } catch {
+    } catch (ex) {
       toast({
         title: "Failed to toggle endpoint",
+        description: ex.message || "Request failed",
         variant: "destructive",
       })
     } finally {

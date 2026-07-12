@@ -312,16 +312,18 @@ function EnabledToggle({ group, onToggled }) {
   const toggle = async () => {
     setBusy(true)
     try {
-      await fetch(`/api/management/groups/${group.id}`, {
+      const res = await fetch(`/api/management/groups/${group.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...getAuthHeader() },
         credentials: "include",
         body: JSON.stringify({ isEnabled: !group.isEnabled }),
       })
+      if (!res.ok) throw new Error(await res.text())
       onToggled()
-    } catch {
+    } catch (ex) {
       toast({
         title: "Failed to toggle group",
+        description: ex.message || "Request failed",
         variant: "destructive",
       })
     } finally {

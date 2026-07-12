@@ -110,6 +110,24 @@ public class GroupAccessPolicyTests : IClassFixture<WebApplicationFactory<Progra
     }
 
     [Fact]
+    public async Task GroupBlocklist_Ipv6Cidr_BlocksMatchingIp()
+    {
+        var client = CreateClientWithIp("2001:db8:1:2::5");
+        var (path, _) = await CreateGroupWithEndpoint(client, groupBlocked: "2001:db8:1:2::/64");
+        var resp = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task GroupBlocklist_Ipv6Cidr_AllowsOtherPrefix()
+    {
+        var client = CreateClientWithIp("2001:db8:ffff:0::5");
+        var (path, _) = await CreateGroupWithEndpoint(client, groupBlocked: "2001:db8:1:2::/64");
+        var resp = await client.GetAsync(path);
+        Assert.NotEqual(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [Fact]
     public async Task GroupAllowlist_DeniesNonMatchingIp()
     {
         var client = CreateClientWithIp("9.9.9.9");
@@ -170,6 +188,47 @@ public class GroupAccessPolicyTests : IClassFixture<WebApplicationFactory<Progra
         getJson = await client.GetStringAsync($"/api/management/groups/{groupId}");
         group = JsonDocument.Parse(getJson).RootElement;
         Assert.True(group.GetProperty("blockedIpRanges").ValueKind == JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task AuthEndpoints_AreNotSubjectToProxyAccessPolicies()
+    {
+        // Guarantee a seeded proxy endpoint matching /api/auth/** regardless of
+        // the local (gitignored) appsettings.json contents.
+        var client = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Authentication:DevBypass", "true");
+            builder.UseSetting("ReverseProxy:Routes:authseed:ClusterId", "authseed-cluster");
+            builder.UseSetting("ReverseProxy:Routes:authseed:Match:Path", "/api/auth/{**catch-all}");
+            builder.UseSetting("ReverseProxy:Clusters:authseed-cluster:Destinations:d1:Address",
+                "http://localhost:59996/");
+            builder.ConfigureServices(services =>
+            {
+                var descriptor = services.SingleOrDefault(
+                    d => d.ServiceType == typeof(DbContextOptions<GatewayDbContext>));
+                if (descriptor != null) services.Remove(descriptor);
+
+                services.AddDbContext<GatewayDbContext>(options =>
+                    options.UseSqlite($"Data Source={_dbPath}"));
+
+                services.AddSingleton<IStartupFilter>(
+                    new FakeRemoteIpStartupFilter(IPAddress.Parse("9.9.9.9")));
+            });
+        }).CreateClient();
+
+        // Block the client IP on the entire seeded "api" group.
+        var groupsJson = await client.GetStringAsync("/api/management/groups");
+        var apiGroupId = JsonDocument.Parse(groupsJson).RootElement.EnumerateArray()
+            .Single(g => g.GetProperty("path").GetString() == "api")
+            .GetProperty("id").GetString();
+        var putResp = await client.PutAsync($"/api/management/groups/{apiGroupId}",
+            Json(new { blockedIpRanges = "9.9.9.9" }));
+        Assert.Equal(HttpStatusCode.OK, putResp.StatusCode);
+
+        // The dashboard login flow must stay reachable, or an admin who
+        // misconfigures a policy locks themselves out permanently.
+        var challenge = await client.GetAsync("/api/auth/challenge?returnUrl=/");
+        Assert.Equal(HttpStatusCode.OK, challenge.StatusCode);
     }
 
     /// <summary>Prepends middleware that stamps a fake client IP (TestServer leaves it null).</summary>

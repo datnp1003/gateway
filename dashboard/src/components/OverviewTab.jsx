@@ -3,9 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card"
 import { Skeleton } from "./ui/Skeleton"
 import { Badge } from "./ui/Badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/Table"
-import { Activity, ArrowUpRight, AlertTriangle, Clock, Wifi, WifiOff, Globe, Server, ShieldOff, Info } from "lucide-react"
+import { Activity, ArrowUpRight, AlertTriangle, Clock, Wifi, WifiOff, Globe, Server, ShieldOff, Lock, Info } from "lucide-react"
 
-function GatewayModelBanner() {
+function GatewayModelBanner({ user }) {
+  const mgmtLabel = user?.email ? `Signed in as ${user.email}` : "Authenticated"
   return (
     <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 to-blue-500/5 text-xs">
       <ShieldOff className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -22,8 +23,8 @@ function GatewayModelBanner() {
         <Badge variant="outline" className="text-[10px] border-amber-400/40 text-amber-400 gap-1">
           <Info className="w-3 h-3" /> Pass-through proxy
         </Badge>
-        <Badge variant="outline" className="text-[10px] border-red-400/40 text-red-400 gap-1">
-          <Info className="w-3 h-3" /> Management API — no auth (dev)
+        <Badge variant="outline" className="text-[10px] border-emerald-400/40 text-emerald-400 gap-1">
+          <Lock className="w-3 h-3" /> Management API — {mgmtLabel}
         </Badge>
       </div>
     </div>
@@ -146,7 +147,7 @@ function ActiveConnectionsGauge({ active, total = 100 }) {
   )
 }
 
-export default function OverviewTab() {
+export default function OverviewTab({ user }) {
   const { data: db, loading } = useFetch("/api/management/dashboard", 3000)
 
   if (loading) {
@@ -214,7 +215,7 @@ export default function OverviewTab() {
   return (
     <div className="space-y-6">
       {/* Gateway model banner */}
-      <GatewayModelBanner />
+      <GatewayModelBanner user={user} />
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

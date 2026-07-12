@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Gateway.Infrastructure.Data;
+using Yarp.ReverseProxy.Configuration;
 
 namespace Gateway.Tests;
 
@@ -145,6 +146,39 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
         var client = CreateClient();
         var response = await client.GetAsync("/api/nonexistent/thing");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProxyRoutes_CarryGlobalRateLimiterPolicy()
+    {
+        var client = CreateClient();
+        // Force startup + sync, then make sure at least one dynamic route exists.
+        var groupName = $"rl-{Guid.NewGuid():N}"[..16];
+        var groupResp = await client.PostAsync("/api/management/groups",
+            Json(new { name = groupName, path = groupName, description = (string?)null }));
+        Assert.Equal(HttpStatusCode.Created, groupResp.StatusCode);
+        var groupId = JsonDocument.Parse(await groupResp.Content.ReadAsStringAsync())
+            .RootElement.GetProperty("id").GetString()!;
+        var epResp = await client.PostAsync("/api/management/endpoints", Json(new
+        {
+            groupId,
+            name = "svc",
+            pathPattern = "/svc/{**catch-all}",
+            destination = "http://localhost:59999/",
+            removePrefix = (string?)null,
+            requiresAuth = false
+        }));
+        Assert.Equal(HttpStatusCode.Created, epResp.StatusCode);
+
+        var routes = _factory.Services.GetRequiredService<InMemoryConfigProvider>()
+            .GetConfig().Routes;
+        Assert.NotEmpty(routes);
+        // The real YARP property must be set — metadata is not read by the
+        // rate-limiting middleware and previously masqueraded as config.
+        Assert.All(routes, r => Assert.Equal("proxy", r.RateLimiterPolicy));
+        Assert.All(routes, r =>
+            Assert.False(r.Metadata?.ContainsKey("RateLimiterPolicy") ?? false,
+                $"route {r.RouteId} still carries dead RateLimiterPolicy metadata"));
     }
 
     [Fact]

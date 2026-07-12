@@ -75,6 +75,19 @@ public static class SeedData
             if (string.IsNullOrEmpty(pathPattern))
                 pathPattern = "/{**catch-all}";
 
+            // Preserve the route's PathRemovePrefix transform, if any; otherwise
+            // YarpConfigSyncService falls back to stripping the group path.
+            string? removePrefix = null;
+            foreach (var transform in routeChild.GetSection("Transforms").GetChildren())
+            {
+                var value = transform["PathRemovePrefix"];
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    removePrefix = value;
+                    break;
+                }
+            }
+
             var clusterSection = clustersSection.GetSection(clusterId);
             var destinations = clusterSection.GetSection("Destinations");
 
@@ -88,7 +101,7 @@ public static class SeedData
                     Name = routeId,
                     PathPattern = pathPattern,
                     Destination = address,
-                    RemovePrefix = null, // Now derived from Group.Path in YarpConfigSyncService
+                    RemovePrefix = removePrefix,
                     RequiresAuth = !string.IsNullOrEmpty(authPolicy),
                     IsEnabled = true
                 };

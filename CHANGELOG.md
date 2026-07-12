@@ -28,8 +28,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `appsettings.json` added to `.gitignore`; `appsettings.Development.json` remains tracked as the minimal dev config template.
-- JWT configuration key path changed from `Jwt:*` to `Authentication:Jwt:*` (issuer, audience, secret, TTL).
-- Management API (`/api/management/**`) now requires `Authorization: Bearer <admin-jwt>`; previously documented as public.
+- JWT configuration key path changed from `Jwt:*` to `Authentication:Jwt:*` (issuer, audience, secret, TTL); Docker Compose now injects the matching JWT, Google OAuth, and admin allowlist environment variables without baked-in secrets.
+- Management API (`/api/management/**`) now requires an admin JWT in the `Authorization` Bearer header; previously documented as public.
+- YARP routes now use the real `RouteConfig.RateLimiterPolicy = "proxy"`; dead metadata-based configuration was removed.
+- Endpoint `RemovePrefix` is honored at runtime and preserved when first-run routes are seeded from appsettings.
+- IP policies and rate-limit partitioning can use trusted forwarded client IPs through explicit `ForwardedHeaders:TrustedProxies` / `TrustedNetworks` configuration; untrusted forwarding headers remain ignored.
+- Endpoint policy matching now reads an atomically replaced in-memory snapshot, chooses the longest matching prefix, and avoids querying SQLite on every proxy request.
+- Concurrent YARP reloads across request scopes are serialized by a singleton coordinator so stale configuration cannot overwrite a newer snapshot.
+- Management CRUD now validates request boundaries, returns deterministic `400`/`404`/`409` responses, and preserves omitted endpoint policy fields during partial updates.
+- IP policy CIDR matching now supports IPv6 prefixes up to `/128`; stale per-client rate-limit windows are periodically pruned.
+- Docker Compose persists `gateway.db` in the `gateway-data` volume.
+- Dashboard management status reflects authenticated state, and group/endpoint toggles surface backend errors instead of reporting false success.
+
+### Security
+- Internal dashboard authentication paths (`/api/auth/**` and `/signin-google`) bypass proxy endpoint access policies, preventing route policy changes from locking out administrators.
+- Trusted proxy handling is opt-in and restricted to explicitly configured addresses or networks.
+
+### Verified
+- `dotnet build --no-restore` — passes with 0 warnings and 0 errors.
+- `dotnet test --no-build` — 89/89 passed.
+- `dashboard npm run build` — passes.
+- Runtime smoke checks: `/health`, `/api/auth/challenge`, and Development-bypass `/api/management/health` return `200`.
 
 ---
 

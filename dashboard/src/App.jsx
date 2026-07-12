@@ -57,7 +57,7 @@ export default function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title={activeTab} user={user} onLogout={logout} />
         <main className="flex-1 overflow-auto p-4 md:p-6">
-          {activeTab === "Overview"        && <OverviewTab />}
+          {activeTab === "Overview"        && <OverviewTab user={user} />}
           {activeTab === "Routes"          && <RoutesTab />}
           {activeTab === "Groups"          && <GroupsTab />}
           {activeTab === "API Routes"      && <EndpointsTab />}

@@ -1,26 +1,34 @@
 using System.Collections.Concurrent;
 using System.Net;
 using Gateway.Domain.Interfaces;
+using Gateway.Infrastructure.Services;
 
 namespace Gateway.Middleware;
 
 /// <summary>
 /// Enforces per-endpoint access policies: IP blocklist, IP allowlist, and per-IP rate-limit.
-/// Skips internal management/health/SPA paths.  No new packages – only stdlib IPAddress.
+/// Skips internal management/auth/health/SPA paths.  Reads policies from the
+/// in-memory EndpointPolicySnapshot (refreshed on every sync) — never the database.
 /// </summary>
 public class EndpointAccessPolicyMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly EndpointPolicySnapshot _policySnapshot;
     private readonly ILogBuffer _logBuffer;
 
     // key = "{endpointId}:{clientIp}" → sliding window of request timestamps
     private readonly ConcurrentDictionary<string, Queue<DateTime>> _rateLimitWindows = new();
+    private static readonly TimeSpan PruneInterval = TimeSpan.FromMinutes(5);
+    private DateTime _lastPruneUtc = DateTime.UtcNow;
 
-    // Internal paths that bypass endpoint access policy entirely
+    // Internal paths that bypass endpoint access policy entirely.
+    // /api/auth and /signin-google are the dashboard login flow: a proxy policy
+    // must never be able to lock the admin out of the management surface.
     private static readonly string[] InternalPrefixes =
     [
         "/api/management",
+        "/api/auth",
+        "/signin-google",
         "/health",
         "/assets",
         "/favicon",
@@ -30,11 +38,11 @@ public class EndpointAccessPolicyMiddleware
 
     public EndpointAccessPolicyMiddleware(
         RequestDelegate next,
-        IServiceScopeFactory scopeFactory,
+        EndpointPolicySnapshot policySnapshot,
         ILogBuffer logBuffer)
     {
         _next = next;
-        _scopeFactory = scopeFactory;
+        _policySnapshot = policySnapshot;
         _logBuffer = logBuffer;
     }
 
@@ -49,12 +57,9 @@ public class EndpointAccessPolicyMiddleware
             return;
         }
 
-        // Resolve the matching endpoint
-        using var scope = _scopeFactory.CreateScope();
-        var repo = scope.ServiceProvider.GetRequiredService<IProxyConfigRepository>();
-
-        var endpoints = await repo.GetAllEnabledEndpointsAsync();
-        var endpoint = FindMatchingEndpoint(endpoints, path);
+        // Resolve the matching endpoint from the snapshot; entries are sorted
+        // longest-prefix-first, so the first hit is the most specific route.
+        var endpoint = FindMatchingEndpoint(path);
 
         if (endpoint is null)
         {
@@ -107,6 +112,8 @@ public class EndpointAccessPolicyMiddleware
             var now = DateTime.UtcNow;
             var cutoff = now.AddMinutes(-1);
 
+            PruneStaleWindows(now, cutoff);
+
             var window = _rateLimitWindows.GetOrAdd(key, _ => new Queue<DateTime>());
             bool rateLimitExceeded;
             lock (window)
@@ -151,30 +158,36 @@ public class EndpointAccessPolicyMiddleware
         return false;
     }
 
-    private static Gateway.Domain.Entities.ProxyEndpoint? FindMatchingEndpoint(
-        IEnumerable<Gateway.Domain.Entities.ProxyEndpoint> endpoints, PathString requestPath)
+    private Gateway.Domain.Entities.ProxyEndpoint? FindMatchingEndpoint(PathString requestPath)
     {
-        foreach (var ep in endpoints)
+        foreach (var entry in _policySnapshot.Entries)
         {
-            var groupPath = ep.Group?.Path?.TrimEnd('/') ?? string.Empty;
-            // Strip catch-all suffix from endpoint path pattern to get a prefix
-            var epPattern = ep.PathPattern ?? string.Empty;
-            var catchAllIdx = epPattern.IndexOf("{**", StringComparison.Ordinal);
-            var epPrefix = catchAllIdx >= 0
-                ? epPattern[..catchAllIdx].TrimEnd('/')
-                : epPattern.TrimEnd('/');
-
-            var fullPrefix = string.IsNullOrEmpty(epPrefix)
-                ? $"/{groupPath.TrimStart('/')}"
-                : $"/{groupPath.TrimStart('/')}{epPrefix}";
-
-            // Normalize double slashes
-            fullPrefix = "/" + fullPrefix.TrimStart('/');
-
-            if (requestPath.StartsWithSegments(fullPrefix, StringComparison.OrdinalIgnoreCase))
-                return ep;
+            if (requestPath.StartsWithSegments(entry.Prefix, StringComparison.OrdinalIgnoreCase))
+                return entry.Endpoint;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Drops rate-limit windows whose entries have all aged out, so the
+    /// dictionary does not grow unboundedly with one key per client IP seen.
+    /// Runs at most once per PruneInterval; races only cost a redundant pass.
+    /// </summary>
+    private void PruneStaleWindows(DateTime now, DateTime cutoff)
+    {
+        if (now - _lastPruneUtc < PruneInterval) return;
+        _lastPruneUtc = now;
+
+        foreach (var (key, window) in _rateLimitWindows)
+        {
+            lock (window)
+            {
+                while (window.Count > 0 && window.Peek() < cutoff)
+                    window.Dequeue();
+                if (window.Count == 0)
+                    _rateLimitWindows.TryRemove(key, out _);
+            }
+        }
     }
 
     /// <summary>
@@ -199,7 +212,7 @@ public class EndpointAccessPolicyMiddleware
                 var lenPart = s[(slashIdx + 1)..];
                 if (IPAddress.TryParse(addrPart, out var network) &&
                     int.TryParse(lenPart, out var prefixLen) &&
-                    prefixLen >= 0 && prefixLen <= 32)
+                    prefixLen >= 0 && prefixLen <= MaxPrefixLength(network))
                 {
                     result.Add((network, prefixLen));
                 }
@@ -235,16 +248,19 @@ public class EndpointAccessPolicyMiddleware
             }
             else
             {
-                // IPv4 CIDR match
-                if (clientAddr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
-                    addr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                // CIDR match within the same address family (IPv4 or IPv6)
+                if (clientAddr.AddressFamily == addr.AddressFamily &&
+                    IsInCidr(clientAddr, addr, prefixLen))
                 {
-                    if (IsInCidr(clientAddr, addr, prefixLen)) return true;
+                    return true;
                 }
             }
         }
         return false;
     }
+
+    private static int MaxPrefixLength(IPAddress network) =>
+        network.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128;
 
     private static bool IsInCidr(IPAddress clientAddr, IPAddress network, int prefixLen)
     {
