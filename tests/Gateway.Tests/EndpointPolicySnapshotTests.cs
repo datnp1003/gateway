@@ -20,14 +20,15 @@ namespace Gateway.Tests;
 public class EndpointPolicySnapshotTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _dbPath;
+    private readonly TestDatabase _database = new();
     private readonly CountingCommandInterceptor _dbCommands = new();
 
     public EndpointPolicySnapshotTests(WebApplicationFactory<Program> factory)
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
+
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            _database.Configure(builder);
             builder.UseSetting("Authentication:DevBypass", "true");
             builder.ConfigureServices(services =>
             {
@@ -36,7 +37,7 @@ public class EndpointPolicySnapshotTests : IClassFixture<WebApplicationFactory<P
                 if (descriptor != null) services.Remove(descriptor);
 
                 services.AddDbContext<GatewayDbContext>(options =>
-                    options.UseSqlite($"Data Source={_dbPath}")
+                    options.UseNpgsql(_database.ConnectionString)
                            .AddInterceptors(_dbCommands));
 
                 services.AddSingleton<IStartupFilter>(
@@ -47,7 +48,8 @@ public class EndpointPolicySnapshotTests : IClassFixture<WebApplicationFactory<P
 
     public void Dispose()
     {
-        if (File.Exists(_dbPath)) File.Delete(_dbPath);
+        _factory.Dispose();
+        _database.Dispose();
     }
 
     private static StringContent Json<T>(T obj) =>

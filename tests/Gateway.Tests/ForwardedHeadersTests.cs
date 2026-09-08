@@ -18,22 +18,24 @@ namespace Gateway.Tests;
 public class ForwardedHeadersTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _dbPath;
+    private readonly TestDatabase _database = new();
 
     public ForwardedHeadersTests(WebApplicationFactory<Program> factory)
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
-        _factory = factory;
+
+        _factory = factory.WithWebHostBuilder(_ => { });
     }
 
     public void Dispose()
     {
-        if (File.Exists(_dbPath)) File.Delete(_dbPath);
+        _factory.Dispose();
+        _database.Dispose();
     }
 
     private HttpClient CreateClient(string connectionIp, params (string Key, string Value)[] settings) =>
         _factory.WithWebHostBuilder(builder =>
         {
+            _database.Configure(builder);
             builder.UseSetting("Authentication:DevBypass", "true");
             foreach (var (key, value) in settings)
                 builder.UseSetting(key, value);
@@ -44,7 +46,7 @@ public class ForwardedHeadersTests : IClassFixture<WebApplicationFactory<Program
                 if (descriptor != null) services.Remove(descriptor);
 
                 services.AddDbContext<GatewayDbContext>(options =>
-                    options.UseSqlite($"Data Source={_dbPath}"));
+                    options.UseNpgsql(_database.ConnectionString));
 
                 services.AddSingleton<IStartupFilter>(
                     new FakeConnectionIpStartupFilter(IPAddress.Parse(connectionIp)));

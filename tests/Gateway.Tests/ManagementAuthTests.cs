@@ -20,22 +20,24 @@ public class ManagementAuthTests : IClassFixture<WebApplicationFactory<Program>>
     private const string JwtSecret = "unit-test-signing-secret-at-least-32-chars";
 
     private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _dbPath;
+    private readonly TestDatabase _database = new();
 
     public ManagementAuthTests(WebApplicationFactory<Program> factory)
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
-        _factory = factory;
+
+        _factory = factory.WithWebHostBuilder(_ => { });
     }
 
     public void Dispose()
     {
-        if (File.Exists(_dbPath)) File.Delete(_dbPath);
+        _factory.Dispose();
+        _database.Dispose();
     }
 
     private WebApplicationFactory<Program> CreateFactory(bool devBypass, bool fakeExternalAuth = false) =>
         _factory.WithWebHostBuilder(builder =>
         {
+            _database.Configure(builder);
             builder.UseSetting("Authentication:DevBypass", devBypass ? "true" : "false");
             builder.UseSetting("Authentication:Jwt:Secret", JwtSecret);
             builder.UseSetting("Authentication:Jwt:Issuer", "Gateway.Admin");
@@ -55,7 +57,7 @@ public class ManagementAuthTests : IClassFixture<WebApplicationFactory<Program>>
                 if (descriptor != null) services.Remove(descriptor);
 
                 services.AddDbContext<GatewayDbContext>(options =>
-                    options.UseSqlite($"Data Source={_dbPath}"));
+                    options.UseNpgsql(_database.ConnectionString));
 
                 if (fakeExternalAuth)
                 {

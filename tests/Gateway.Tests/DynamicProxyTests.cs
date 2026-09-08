@@ -12,13 +12,14 @@ namespace Gateway.Tests;
 public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _dbPath;
+    private readonly TestDatabase _database = new();
 
     public DynamicProxyTests(WebApplicationFactory<Program> factory)
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
+
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            _database.Configure(builder);
             builder.UseSetting("Authentication:DevBypass", "true");
             builder.ConfigureServices(services =>
             {
@@ -27,14 +28,15 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
                 if (descriptor != null) services.Remove(descriptor);
 
                 services.AddDbContext<GatewayDbContext>(options =>
-                    options.UseSqlite($"Data Source={_dbPath}"));
+                    options.UseNpgsql(_database.ConnectionString));
             });
         });
     }
 
     public void Dispose()
     {
-        if (File.Exists(_dbPath)) File.Delete(_dbPath);
+        _factory.Dispose();
+        _database.Dispose();
     }
 
     private HttpClient CreateClient() => _factory.CreateClient();
@@ -64,7 +66,7 @@ public class DynamicProxyTests : IClassFixture<WebApplicationFactory<Program>>, 
     public async Task GroupsApi_WithSeed_IncludesAuthCluster()
     {
         var client = CreateClient();
-        // Force seed by hitting the endpoint (EnsureCreated + Seed runs on first request through pipeline)
+        // Host startup applies migrations and seeds explicit test routes.
         var response = await client.GetAsync("/api/management/groups");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();

@@ -6,38 +6,11 @@ namespace Gateway.Infrastructure.Data;
 
 public static class SeedData
 {
-    public static async Task EnsureSchemaAsync(GatewayDbContext db)
-    {
-        if (!await HasColumnAsync(db, "Endpoints", "RateLimitPerMinute"))
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Endpoints ADD COLUMN RateLimitPerMinute INTEGER NULL");
-        if (!await HasColumnAsync(db, "Endpoints", "BlockedIpRanges"))
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Endpoints ADD COLUMN BlockedIpRanges TEXT NULL");
-        if (!await HasColumnAsync(db, "Endpoints", "AllowedIpRanges"))
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Endpoints ADD COLUMN AllowedIpRanges TEXT NULL");
-        if (!await HasColumnAsync(db, "Groups", "BlockedIpRanges"))
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Groups ADD COLUMN BlockedIpRanges TEXT NULL");
-        if (!await HasColumnAsync(db, "Groups", "AllowedIpRanges"))
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Groups ADD COLUMN AllowedIpRanges TEXT NULL");
-    }
-
-    private static async Task<bool> HasColumnAsync(GatewayDbContext db, string table, string column)
-    {
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = $"PRAGMA table_info({table})";
-        if (command.Connection!.State != System.Data.ConnectionState.Open)
-            await command.Connection.OpenAsync();
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
     public static async Task SeedFromAppSettingsAsync(GatewayDbContext db, IConfiguration config)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        // Serialize first-run imports across gateway instances; rollback partial seeds.
+        await db.Database.ExecuteSqlRawAsync("LOCK TABLE \"Groups\" IN SHARE ROW EXCLUSIVE MODE");
         if (await db.Groups.AnyAsync())
             return; // Already seeded
 
@@ -110,5 +83,6 @@ public static class SeedData
         }
 
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 }

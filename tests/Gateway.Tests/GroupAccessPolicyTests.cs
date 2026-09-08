@@ -13,22 +13,24 @@ namespace Gateway.Tests;
 public class GroupAccessPolicyTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _dbPath;
+    private readonly TestDatabase _database = new();
 
     public GroupAccessPolicyTests(WebApplicationFactory<Program> factory)
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
-        _factory = factory;
+
+        _factory = factory.WithWebHostBuilder(_ => { });
     }
 
     public void Dispose()
     {
-        if (File.Exists(_dbPath)) File.Delete(_dbPath);
+        _factory.Dispose();
+        _database.Dispose();
     }
 
     private HttpClient CreateClientWithIp(string fakeIp) =>
         _factory.WithWebHostBuilder(builder =>
         {
+            _database.Configure(builder);
             builder.UseSetting("Authentication:DevBypass", "true");
             builder.ConfigureServices(services =>
             {
@@ -37,7 +39,7 @@ public class GroupAccessPolicyTests : IClassFixture<WebApplicationFactory<Progra
                 if (descriptor != null) services.Remove(descriptor);
 
                 services.AddDbContext<GatewayDbContext>(options =>
-                    options.UseSqlite($"Data Source={_dbPath}"));
+                    options.UseNpgsql(_database.ConnectionString));
 
                 services.AddSingleton<IStartupFilter>(
                     new FakeRemoteIpStartupFilter(IPAddress.Parse(fakeIp)));
@@ -197,6 +199,7 @@ public class GroupAccessPolicyTests : IClassFixture<WebApplicationFactory<Progra
         // the local (gitignored) appsettings.json contents.
         var client = _factory.WithWebHostBuilder(builder =>
         {
+            _database.Configure(builder);
             builder.UseSetting("Authentication:DevBypass", "true");
             builder.UseSetting("ReverseProxy:Routes:authseed:ClusterId", "authseed-cluster");
             builder.UseSetting("ReverseProxy:Routes:authseed:Match:Path", "/api/auth/{**catch-all}");
@@ -209,7 +212,7 @@ public class GroupAccessPolicyTests : IClassFixture<WebApplicationFactory<Progra
                 if (descriptor != null) services.Remove(descriptor);
 
                 services.AddDbContext<GatewayDbContext>(options =>
-                    options.UseSqlite($"Data Source={_dbPath}"));
+                    options.UseNpgsql(_database.ConnectionString));
 
                 services.AddSingleton<IStartupFilter>(
                     new FakeRemoteIpStartupFilter(IPAddress.Parse("9.9.9.9")));

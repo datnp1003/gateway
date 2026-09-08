@@ -85,6 +85,7 @@ FE attaches Authorization: Bearer <jwt> on every
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Node.js v18+](https://nodejs.org/) and `npm`
 - [Docker & Docker Compose](https://www.docker.com/) (optional)
+- PostgreSQL 17 (local service, managed server, or Docker)
 
 ### Local Setup
 
@@ -99,6 +100,12 @@ cd gateway
 `appsettings.json` is git-ignored and local-only. Create it under `src/Gateway/` with the Authentication and optional Elasticsearch/ReverseProxy sections shown below. Do not copy `appsettings.Development.json`: it contains overrides only, not a complete base configuration.
 
 **3. Build the solution:**
+Set the required PostgreSQL connection string first (use a new database, not an existing production database):
+```bash
+export ConnectionStrings__Gateway='Host=localhost;Port=5432;Database=gateway;Username=gateway;Password=your-local-password'
+```
+Startup applies the checked-in EF migrations; the database role needs schema DDL permissions.
+
 ```bash
 dotnet build Gateway.sln
 ```
@@ -173,8 +180,9 @@ gateway/
 │   │   └── Models/                    # DTOs: RouteInfo, ClusterInfo, DashboardData
 │   ├── Gateway.Infrastructure/        # EF Core, repositories, services
 │   │   ├── Data/
-│   │   │   ├── GatewayDbContext.cs    # SQLite EF Core context
-│   │   │   └── SeedData.cs            # Schema patching + first-run appsettings seed
+│   │   │   ├── GatewayDbContext.cs    # PostgreSQL EF Core context
+│   │   │   ├── Migrations/            # Versioned PostgreSQL schema + model snapshot
+│   │   │   └── SeedData.cs            # Transactional first-run appsettings seed
 │   │   ├── Repositories/
 │   │   │   └── ProxyConfigRepository.cs
 │   │   └── Services/
@@ -194,7 +202,7 @@ gateway/
 
 ## ✨ Features
 
-- 🌉 **YARP Reverse Proxy (dynamic)**: Routes are built from SQLite at startup and updated in-memory on every CRUD operation — no restart needed. One cluster per endpoint; group path is stripped as the forwarding prefix.
+- 🌉 **YARP Reverse Proxy (dynamic)**: Routes are built from PostgreSQL at startup and updated in-memory on every CRUD operation — no restart needed. One cluster per endpoint; group path is stripped as the forwarding prefix.
 - 🔐 **Dashboard Auth (Google OAuth → Admin JWT)**: FE-driven login flow. Google OAuth identifies the dashboard operator only. A one-time code is exchanged for a Gateway-issued JWT stored in sessionStorage; Bearer token is required on all `/api/management/**` calls.
 - 🔓 **Proxy Auth Pass-Through**: YARP proxy routes carry no authorization policy. Downstream services validate their own tokens. `Authorization`/`Cookie` headers are forwarded untouched.
 - 🛡️ **Per-Endpoint & Per-Group Access Policies**: Runtime IP blocklist, IP allowlist (exact IPs and IPv4 CIDRs; `::1` supported), and per-endpoint rate limits enforced by `EndpointAccessPolicyMiddleware` before YARP routing.
@@ -283,7 +291,7 @@ https://your-production-domain/signin-google
 
 **Initial proxy seed** (in `appsettings.json` → `ReverseProxy`):
 
-On first run with an empty database, `SeedData.SeedFromAppSettingsAsync` reads the `ReverseProxy.Routes` and `ReverseProxy.Clusters` sections and creates a default group and endpoints in SQLite. Subsequent runs ignore these sections — the database is authoritative.
+On first run with an empty database, `SeedData.SeedFromAppSettingsAsync` reads the `ReverseProxy.Routes` and `ReverseProxy.Clusters` sections and creates a default group and endpoints in PostgreSQL. Subsequent runs ignore these sections — the database is authoritative.
 
 Example seed-only snippet:
 ```json
@@ -309,7 +317,7 @@ Example seed-only snippet:
 
 ## 🗂️ Dynamic Proxy Structure
 
-YARP routes are loaded from SQLite, not from `appsettings.json` at runtime. The data model is a **Group → Endpoint** hierarchy:
+YARP routes are loaded from PostgreSQL, not from `appsettings.json` at runtime. The data model is a **Group → Endpoint** hierarchy:
 
 ```
 /{group.Path}{endpoint.PathPattern}/{**catch-all}
@@ -416,10 +424,10 @@ All endpoints under `/api/management/**` require `Authorization: Bearer <admin-j
 ### Running Tests
 
 ```bash
-dotnet test Gateway.sln
+bash scripts/test-postgres.sh --logger 'trx;LogFileName=postgres.trx'
 ```
 
-Tests use `WebApplicationFactory` with an isolated in-memory SQLite database per test class. The suite covers:
+The script builds and tests against a real, fresh PostgreSQL 17 container bound to a random localhost port, then removes only that container and its anonymous volume. Tests create/drop randomly named databases per test and supply explicit seed routes; no local appsettings or existing database is needed. Without Docker, set `GATEWAY_TEST_POSTGRES` to an isolated server connection string with CREATEDB permission and run `dotnet test Gateway.sln`. There is no in-memory fallback. The suite covers:
 
 - **ManagementAuthTests**: challenge/login redirect, exchange flow (dev bypass + real JWT), `/me` endpoint, management API 401/403 enforcement, `DevBypass` behavior.
 - **DynamicProxyTests**: group/endpoint CRUD, YARP sync, seed from appsettings.

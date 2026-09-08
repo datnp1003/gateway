@@ -16,13 +16,14 @@ namespace Gateway.Tests;
 public class ManagementApiValidationTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _dbPath;
+    private readonly TestDatabase _database = new();
 
     public ManagementApiValidationTests(WebApplicationFactory<Program> factory)
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
+
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            _database.Configure(builder);
             builder.UseSetting("Authentication:DevBypass", "true");
             builder.ConfigureServices(services =>
             {
@@ -31,14 +32,15 @@ public class ManagementApiValidationTests : IClassFixture<WebApplicationFactory<
                 if (descriptor != null) services.Remove(descriptor);
 
                 services.AddDbContext<GatewayDbContext>(options =>
-                    options.UseSqlite($"Data Source={_dbPath}"));
+                    options.UseNpgsql(_database.ConnectionString));
             });
         });
     }
 
     public void Dispose()
     {
-        if (File.Exists(_dbPath)) File.Delete(_dbPath);
+        _factory.Dispose();
+        _database.Dispose();
     }
 
     private HttpClient CreateClient() => _factory.CreateClient();

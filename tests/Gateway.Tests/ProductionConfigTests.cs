@@ -12,22 +12,22 @@ namespace Gateway.Tests;
 /// <summary>
 /// Production deployment contract: the app must fail closed when auth config is
 /// missing, must accept the exact environment keys docker-compose injects, and
-/// must persist SQLite at a configurable path so a container volume can hold it.
+/// must persist configuration in PostgreSQL using the supplied connection string.
 /// </summary>
 public class ProductionConfigTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _dbPath;
+    private readonly TestDatabase _database = new();
 
     public ProductionConfigTests(WebApplicationFactory<Program> factory)
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"gateway-test-{Guid.NewGuid()}.db");
-        _factory = factory;
+        _factory = factory.WithWebHostBuilder(_ => { });
     }
 
     public void Dispose()
     {
-        if (File.Exists(_dbPath)) File.Delete(_dbPath);
+        _factory.Dispose();
+        _database.Dispose();
     }
 
     /// <summary>
@@ -60,7 +60,7 @@ public class ProductionConfigTests : IClassFixture<WebApplicationFactory<Program
             ["Authentication:Google:ClientId"] = "",
             ["Authentication:Google:ClientSecret"] = "",
             ["Authentication:AllowedEmails"] = "",
-            ["ConnectionStrings:Gateway"] = $"Data Source={_dbPath}",
+            ["ConnectionStrings:Gateway"] = _database.ConnectionString,
         });
 
         // Host must never come up serving requests without a JWT secret.
@@ -77,7 +77,7 @@ public class ProductionConfigTests : IClassFixture<WebApplicationFactory<Program
             ["Authentication__Google__ClientId"] = "test-client-id",
             ["Authentication__Google__ClientSecret"] = "test-client-secret",
             ["Authentication__AllowedEmails"] = "admin@example.com",
-            ["ConnectionStrings__Gateway"] = $"Data Source={_dbPath}",
+            ["ConnectionStrings__Gateway"] = _database.ConnectionString,
         };
         try
         {
@@ -100,26 +100,29 @@ public class ProductionConfigTests : IClassFixture<WebApplicationFactory<Program
     }
 
     [Fact]
-    public async Task SqliteConnectionString_IsConfigurable_ForVolumePersistence()
+    public async Task PostgresConnectionString_IsConfigurable_AndMigrationsAreRepeatable()
     {
         var factory = CreateIsolatedFactory("Development", new()
         {
             ["Authentication:DevBypass"] = "true",
-            ["ConnectionStrings:Gateway"] = $"Data Source={_dbPath}",
+            ["ConnectionStrings:Gateway"] = _database.ConnectionString,
         });
 
         var client = factory.CreateClient();
         var response = await client.GetAsync("/health");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // EnsureCreated must have created the database at the configured path.
-        Assert.True(File.Exists(_dbPath),
-            $"Expected SQLite db at configured path {_dbPath}; " +
-            "Program.cs is not honoring ConnectionStrings:Gateway.");
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        Assert.Equal("Npgsql.EntityFrameworkCore.PostgreSQL", db.Database.ProviderName);
+        Assert.Single(await db.Database.GetAppliedMigrationsAsync());
+        Assert.False(db.Database.HasPendingModelChanges());
+        await db.Database.MigrateAsync();
+        Assert.Single(await db.Groups.ToListAsync());
     }
 
     [Fact]
-    public void DockerCompose_InjectsAuthConfig_AndPersistsSqlite()
+    public void DockerCompose_InjectsAuthConfig_AndPersistsPostgres()
     {
         var composePath = FindRepoFile("docker-compose.yml");
         var yaml = File.ReadAllText(composePath);
@@ -139,9 +142,10 @@ public class ProductionConfigTests : IClassFixture<WebApplicationFactory<Program
         Assert.DoesNotContain("CHANGE_ME", yaml);
         Assert.DoesNotContain("GOCSPX", yaml);
 
-        // SQLite must live on a persistent volume at the path the app uses.
+        // PostgreSQL data must live on its own persistent volume.
         Assert.Contains("ConnectionStrings__Gateway", yaml);
-        Assert.Contains("/app/data", yaml);
+        Assert.Contains("/var/lib/postgresql/data", yaml);
+        Assert.Contains("service_healthy", yaml);
     }
 
     private static string FindRepoFile(string fileName)

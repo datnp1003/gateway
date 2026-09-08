@@ -43,13 +43,11 @@ try
 
     Log.Logger = loggerConfig.CreateLogger();
 
-    // ─── SQLite + EF Core ───
-    // Path is configurable (env ConnectionStrings__Gateway) so deployments can
-    // point at a persistent volume instead of the ephemeral container FS.
+    // ─── PostgreSQL + EF Core ───
     var gatewayConnectionString = builder.Configuration.GetConnectionString("Gateway")
-        ?? "Data Source=gateway.db";
+        ?? throw new InvalidOperationException("ConnectionStrings:Gateway must configure PostgreSQL.");
     builder.Services.AddDbContext<GatewayDbContext>(options =>
-        options.UseSqlite(gatewayConnectionString));
+        options.UseNpgsql(gatewayConnectionString));
 
     // ─── YARP with InMemoryConfig (dynamic, no appsettings dependency) ───
     var yarpConfig = new InMemoryConfigProvider(
@@ -171,8 +169,7 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-        db.Database.EnsureCreated();
-        await SeedData.EnsureSchemaAsync(db);
+        await db.Database.MigrateAsync();
         await SeedData.SeedFromAppSettingsAsync(db, builder.Configuration);
 
         var syncer = scope.ServiceProvider.GetRequiredService<IYarpConfigSyncService>();

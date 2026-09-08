@@ -5,3 +5,6 @@
 **/.vscode
 **/logs
 *.user
+**/*.db
+**/*.db-shm
+**/*.db-wal
