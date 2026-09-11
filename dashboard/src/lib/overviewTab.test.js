@@ -19,8 +19,9 @@ try {
   // Error Breakdown is removed from the UI position and not duplicated anywhere.
   assert.doesNotMatch(markup, /Error breakdown/i)
   assert.doesNotMatch(markup, /Network failures \(no HTTP status\)/)
-  // Exactly one Endpoint Groups panel (no silent duplication).
+  // Exactly one Endpoint Groups panel (no silent duplication) and no explanatory footer.
   assert.equal(markup.match(/>Endpoint Groups</g)?.length, 1)
+  assert.doesNotMatch(markup, /Bars are observed requests per UTC minute over the last hour/)
   // Traffic panel keeps its calendar-day domain: UTC title, UTC-labelled axis, fixed 00:00→24:00 hour ticks.
   assert.match(markup, /Traffic — Today \(UTC\)/)
   assert.match(markup, /times shown in UTC/)
@@ -40,7 +41,9 @@ try {
   assert.match(chart, /p95 0\.077 s/)
   assert.match(chart, /0\.077 s/)
   assert.doesNotMatch(chart, / ms/)
-  console.log("PASS: 24/24 overviewTab assertions — Endpoint Groups relocated beside Traffic, no Error Breakdown / no duplicate, Traffic calendar-day domain, no demo/static content, seconds chart precision")
+  const chartWithoutLegend = renderToStaticMarkup(React.createElement(MetricsChart, { title: "Traffic", samples: [], series: [["attempts", "Requests", "blue"]], unit: "req", domain: { start: 0, end: 86400000 }, showLegend: false }))
+  assert.doesNotMatch(chartWithoutLegend, /Requests \(req\)/)
+  console.log("PASS: 26/26 overviewTab assertions — compact top-five group layout, no chart notes, Traffic calendar-day domain")
 } finally {
   await server.close()
 }

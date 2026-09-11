@@ -96,7 +96,7 @@ public sealed class ProxyOperationsQueryService
             SELECT "GroupId", max("GroupName"), count(*)::bigint, count(DISTINCT "EndpointId")::int,
                    count(*) FILTER (WHERE "Outcome" = 'upstream_response' AND "ResponseStatus" < 400)::bigint
             FROM "ProxyRequestEvents" WHERE "OccurredAt" >= @start AND "OccurredAt" < @end
-            GROUP BY "GroupId" ORDER BY count(*) DESC, "GroupId"
+            GROUP BY "GroupId" ORDER BY count(*) DESC, "GroupId" LIMIT 5
             """;
         var result = new List<OverviewGroup>();
         await using var command = await CreateCommandAsync(sql, start, end, null, null, ct);

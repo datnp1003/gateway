@@ -47,11 +47,10 @@ export default function OverviewTab({ onOpenLogs }) {
     </div>
 
     <div className="overview-pair">
-      <MetricsChart title="Traffic — Today (UTC)" samples={data?.traffic} series={[["attempts", "Requests", "#2563eb"]]} unit="req" domain={trafficDomain} />
+      <MetricsChart title="Traffic — Today (UTC)" samples={data?.traffic} series={[["attempts", "Requests", "#2563eb"]]} unit="req" domain={trafficDomain} showLegend={false} />
       <Card><CardHeader><CardTitle>Endpoint Groups</CardTitle></CardHeader><CardContent className="group-list">
         {data && !data.groups.length && <p className="text-sm text-muted-foreground">No observed group traffic in this window.</p>}
-        {data?.groups?.map(group => <div key={group.groupId} className="group-row"><div className="group-row__head"><div><button className="dashboard-link" onClick={() => onOpenLogs({ groupId: group.groupId })}>{group.groupName}</button><code>{number(group.observedEndpoints)} observed endpoint{group.observedEndpoints === 1 ? "" : "s"}</code></div><span>{number(group.requestsPerMinute)} req/min<br />{group.measuredSuccessPercent == null ? "—" : `${group.measuredSuccessPercent.toFixed(2)}% upstream <400`}</span></div><Sparkline buckets={group.hourly} domain={groupsDomain} label={`${group.groupName} — last hour`} /></div>)}
-        <p className="text-xs text-muted-foreground">Bars are observed requests per UTC minute over the last hour.</p>
+        {data?.groups?.map(group => <div key={group.groupId} className="group-row"><div><button className="dashboard-link" onClick={() => onOpenLogs({ groupId: group.groupId })}>{group.groupName}</button><code>{number(group.observedEndpoints)} observed endpoint{group.observedEndpoints === 1 ? "" : "s"}</code></div><Sparkline buckets={group.hourly} domain={groupsDomain} label={`${group.groupName} — last hour`} /><span>{number(group.requestsPerMinute)} req/min<br />{group.measuredSuccessPercent == null ? "—" : `${group.measuredSuccessPercent.toFixed(2)}% upstream <400`}</span></div>)}
       </CardContent></Card>
     </div>
 
