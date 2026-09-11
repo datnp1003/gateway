@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react"
+import Modal from "./ui/Modal"
 import { useToast } from "../hooks/useToast"
 import { Button } from "./ui/Button"
 import { Badge } from "./ui/Badge"
@@ -59,7 +60,7 @@ function GroupModal({ initial, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
@@ -77,7 +78,7 @@ function GroupModal({ initial, onClose, onSaved }) {
         <form onSubmit={submit} className="px-6 py-5 space-y-4">
           <div>
             <label htmlFor="group-name" className="block text-xs font-medium text-muted-foreground mb-1">
-              Name <span className="text-destructive">*</span>
+              Display name <span className="text-destructive">*</span>
             </label>
             <input
               id="group-name"
@@ -92,19 +93,20 @@ function GroupModal({ initial, onClose, onSaved }) {
           </div>
           <div>
             <label htmlFor="group-path" className="block text-xs font-medium text-muted-foreground mb-1">
-              Path <span className="text-destructive">*</span>
+              Group Path · public URL prefix <span className="text-destructive">*</span>
             </label>
             <input
               id="group-path"
               name="path"
               type="text"
               value={form.path}
-              onChange={e => set("path", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""))}
+              onChange={e => set("path", e.target.value)}
               placeholder="my-group"
               aria-label="Group path"
               className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
             />
-            <p className="text-xs text-muted-foreground mt-1">Lowercase letters, numbers and hyphens only</p>
+            <p className="text-xs text-muted-foreground mt-1">The name is only a label. Group Path is part of every public URL: lowercase letters, numbers and hyphens, without slashes (e.g. 9r).</p>
+            <div className="route-preview mt-3"><strong>Public URL template</strong><code>{window.location.origin}/{form.path || "group-path"}/…</code><p>Endpoints add their PathPattern after this prefix. {editing && "Changing Group Path changes every endpoint URL in this group."}</p></div>
           </div>
           <div>
             <label htmlFor="group-description" className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
@@ -134,7 +136,7 @@ function GroupModal({ initial, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -191,7 +193,7 @@ function IpPolicyModal({ group, mode, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
@@ -255,7 +257,7 @@ function IpPolicyModal({ group, mode, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -285,7 +287,7 @@ function DeleteDialog({ group, onClose, onDeleted }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
         <h2 className="text-sm font-semibold">Delete Group</h2>
         <p className="text-sm text-muted-foreground">
@@ -300,7 +302,7 @@ function DeleteDialog({ group, onClose, onDeleted }) {
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -338,11 +340,13 @@ function EnabledToggle({ group, onToggled }) {
       title={group.isEnabled
         ? "Group enabled — click to disable (disables ALL API routes in this group)"
         : "Group disabled — all API routes inside are unreachable. Click to re-enable."}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 cursor-pointer ${
+      role="switch"
+      aria-checked={group.isEnabled}
+      className={`gateway-switch relative inline-flex items-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 cursor-pointer ${
         group.isEnabled ? "bg-primary/30" : "bg-muted"
       }`}
     >
-      <span className={`inline-block h-3.5 w-3.5 rounded-full shadow transition-transform ${
+      <span style={{ borderRadius: 3 }} className={`inline-block h-3.5 w-3.5 rounded-sm shadow transition-transform ${
         group.isEnabled ? "translate-x-[18px] bg-primary" : "translate-x-[2px] bg-muted-foreground"
       }`} />
     </button>
@@ -388,7 +392,7 @@ function TableSkeleton() {
             <Skeleton className="h-4 w-28" />
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-4 flex-1 max-w-xs" />
-            <Skeleton className="h-5 w-9 rounded-full" />
+            <Skeleton className="h-5 w-9 rounded-md" />
             <Skeleton className="h-5 w-10 rounded-full" />
             <Skeleton className="h-8 w-28 rounded-md" />
           </div>
@@ -400,7 +404,8 @@ function TableSkeleton() {
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 export default function GroupsTab() {
-  const { data: groups, loading, refetch } = useFetchWithRefetch("/api/management/groups", 5000)
+  const { data: groups, loading, error, refetch } = useFetchWithRefetch("/api/management/groups", 5000)
+  const [search, setSearch] = useState("")
   const [modal, setModal] = useState(null)
   const [toDelete, setToDelete] = useState(null)
 
@@ -421,7 +426,7 @@ export default function GroupsTab() {
     )
   }
 
-  const list = groups ?? []
+  const list = (groups ?? []).filter(g => `${g.name} ${g.path} ${g.description || ""}`.toLowerCase().includes(search.toLowerCase()))
 
   return (
     <div className="space-y-4">
@@ -441,16 +446,18 @@ export default function GroupsTab() {
       </div>
 
       {/* Table */}
+      {error && <div role="alert" className="route-preview text-destructive">Could not refresh groups. Displayed data may be outdated. <Button variant="outline" onClick={refresh}>Retry</Button></div>}
+      <input type="search" aria-label="Search groups" placeholder="Search name, Group Path or description…" value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:max-w-sm border rounded-lg bg-card px-3 py-2 text-sm" />
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Path</TableHead>
+                <TableHead>Group Path</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-center">Enabled</TableHead>
-                <TableHead className="text-center">API Routes</TableHead>
+                <TableHead className="text-center">Endpoints</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -458,7 +465,7 @@ export default function GroupsTab() {
               {list.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-12 text-muted-foreground text-xs">
-                    No groups yet. Click <span className="text-primary">+ New Group</span> to add one.
+                    {search ? "No groups match your search." : "No groups yet. Create a group first, then add endpoints."}
                   </TableCell>
                 </TableRow>
               )}
@@ -484,7 +491,6 @@ export default function GroupsTab() {
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
                       <Button
                         variant="outline"
-                        size="sm"
                         title="Block IPs for this group"
                         onClick={() => setModal({ mode: "block", group: g })}
                         className="gap-1 text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 hover:bg-destructive/5"
@@ -502,17 +508,21 @@ export default function GroupsTab() {
                       </Button>
                       <Button
                         variant="outline"
-                        size="sm"
+                        size="icon"
+                        aria-label={`Edit ${g.name}`}
+                        title="Edit"
                         onClick={() => setModal({ mode: "edit", group: g })}
                       >
-                        <Pencil className="w-3 h-3" /> Edit
+                        <Pencil aria-hidden="true" className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="destructive"
-                        size="sm"
+                        size="icon"
+                        aria-label={`Delete ${g.name}`}
+                        title="Delete"
                         onClick={() => setToDelete(g)}
                       >
-                        <Trash2 className="w-3 h-3" /> Delete
+                        <Trash2 aria-hidden="true" className="w-4 h-4" />
                       </Button>
                     </div>
                   </TableCell>

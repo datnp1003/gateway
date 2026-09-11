@@ -12,9 +12,11 @@ import { Toaster } from "./components/ui/Toaster"
 import useAuth from "./hooks/useAuth"
 
 const tabs = ["Overview", "Routes", "Groups", "API Routes", "Backend Targets", "Logs"]
+const pageTitles = { "API Routes": "Endpoints", Routes: "Active routes", "Backend Targets": "Backend targets" }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("Overview")
+  const [logNavigation, setLogNavigation] = useState(null)
   const {
     authenticated,
     loading,
@@ -52,17 +54,17 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <Sidebar tabs={tabs} active={activeTab} onSelect={setActiveTab} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header title={activeTab} user={user} onLogout={logout} />
-        <main className="flex-1 overflow-auto p-4 md:p-6">
-          {activeTab === "Overview"        && <OverviewTab user={user} />}
+    <div className="app-shell bg-background text-foreground">
+      <Sidebar tabs={tabs} active={activeTab} onSelect={tab => { setActiveTab(tab); if (tab !== "Logs") setLogNavigation(null) }} />
+      <div className="app-workspace">
+        <Header title={pageTitles[activeTab] ?? activeTab} user={user} onLogout={logout} />
+        <main id="main-content" tabIndex={-1} className="workspace-content">
+          {activeTab === "Overview"        && <OverviewTab onOpenLogs={filters => { setLogNavigation({ ...filters, nonce: Date.now() }); setActiveTab("Logs") }} />}
           {activeTab === "Routes"          && <RoutesTab />}
           {activeTab === "Groups"          && <GroupsTab />}
           {activeTab === "API Routes"      && <EndpointsTab />}
           {activeTab === "Backend Targets" && <ClustersTab />}
-          {activeTab === "Logs"            && <LogsTab />}
+          {activeTab === "Logs"            && <LogsTab navigation={logNavigation} />}
         </main>
       </div>
       <Toaster />

@@ -1,4 +1,6 @@
 import { useState, useCallback } from "react"
+import Modal from "./ui/Modal"
+import { routePreview } from "../lib/routePreview"
 import { useToast } from "../hooks/useToast"
 import { Button } from "./ui/Button"
 import { Badge } from "./ui/Badge"
@@ -6,7 +8,7 @@ import { Card, CardContent } from "./ui/Card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/Table"
 import { Skeleton } from "./ui/Skeleton"
 import { Select as SelectInput } from "./ui/Select"
-import { Plus, Pencil, Trash2, AlertTriangle, ShieldOff, ShieldCheck, Gauge, Ban } from "lucide-react"
+import { Plus, Pencil, Trash2, AlertTriangle, ShieldOff, ShieldCheck, Gauge, Ban, Copy } from "lucide-react"
 import { getAuthHeader } from "../lib/auth"
 import { useFetchWithRefetch } from "../hooks/useFetch"
 
@@ -45,6 +47,8 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
   const [err, setErr] = useState("")
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const selectedGroup = groups.find(g => g.id === form.groupId)
+  const preview = routePreview(window.location.origin, selectedGroup?.path || "group-path", form.pathPattern || "/v1/{**catch-all}", form.destination || "http://backend:8080", form.removePrefix)
 
   const submit = async e => {
     e.preventDefault()
@@ -63,7 +67,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             name:         form.name.trim(),
             pathPattern:  form.pathPattern.trim(),
             destination:  form.destination.trim(),
-            removePrefix: form.removePrefix.trim() || null,
+            removePrefix: form.removePrefix.trim(),
             requiresAuth: form.requiresAuth,
             isEnabled:    form.isEnabled,
           })
@@ -72,7 +76,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             name:         form.name.trim(),
             pathPattern:  form.pathPattern.trim(),
             destination:  form.destination.trim(),
-            removePrefix: form.removePrefix.trim() || null,
+            removePrefix: form.removePrefix.trim(),
             requiresAuth: form.requiresAuth,
           }
       const res = await fetch(url, {
@@ -102,7 +106,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
@@ -131,7 +135,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
               aria-label="Endpoint group"
             >
               {groups.map(g => (
-                <option key={g.id} value={g.id}>{g.name}</option>
+                <option key={g.id} value={g.id}>{g.name} · /{g.path}</option>
               ))}
             </SelectInput>
           </div>
@@ -156,7 +160,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
           {/* Path Pattern */}
           <div>
             <label htmlFor="endpoint-path-pattern" className="block text-xs font-medium text-muted-foreground mb-1">
-              Path Pattern <span className="text-destructive">*</span>
+              PathPattern · path after the group prefix <span className="text-destructive">*</span>
             </label>
             <input
               id="endpoint-path-pattern"
@@ -164,13 +168,14 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
               type="text"
               value={form.pathPattern}
               onChange={e => set("pathPattern", e.target.value)}
-              placeholder="/api/v1/{**}"
+              placeholder="/v1/{**catch-all}"
               aria-label="Path Pattern"
               className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
             />
           </div>
 
           {/* Destination */}
+          <p className="text-xs text-muted-foreground">Start with /. Do not repeat the Group Path. <code>{"/v1/{**catch-all}"}</code> matches /v1/models and nested paths.</p>
           <div>
             <label htmlFor="endpoint-destination" className="block text-xs font-medium text-muted-foreground mb-1">
               Destination <span className="text-destructive">*</span>
@@ -190,7 +195,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
           {/* Remove Prefix */}
           <div>
             <label htmlFor="endpoint-remove-prefix" className="block text-xs font-medium text-muted-foreground mb-1">
-              Remove Prefix <span className="text-muted-foreground">(optional)</span>
+              RemovePrefix <span className="text-muted-foreground">(optional override)</span>
             </label>
             <input
               id="endpoint-remove-prefix"
@@ -198,13 +203,15 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
               type="text"
               value={form.removePrefix}
               onChange={e => set("removePrefix", e.target.value)}
-              placeholder="/api/v1"
+              placeholder={selectedGroup ? `Default: /${selectedGroup.path}` : "Default: group prefix"}
               aria-label="Remove Prefix"
               className="w-full bg-input border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
             />
           </div>
 
           {/* Downstream Auth (metadata) */}
+          <p className="text-xs text-muted-foreground">Leave empty to strip only the Group Path. An override replaces that default; it is matched against the full incoming path, not the path after the group. Use /9r/v1 to strip both /9r and /v1.</p>
+          <div className="route-preview" aria-live="polite"><strong>Request URL template</strong><code>{preview.incoming}</code><strong>Forwarded to upstream</strong><code>{preview.upstream}</code><p>Removes {preview.prefix}. Parameters are shown as templates; this preview does not send a request. {!preview.matches && "This prefix does not match: the incoming path will be retained."}</p></div>
           <label className="flex items-center gap-3 cursor-pointer select-none">
             <span className="relative">
               <input
@@ -216,8 +223,8 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
                 onChange={e => set("requiresAuth", e.target.checked)}
                 aria-label="Service Requires Auth (metadata)"
               />
-              <div className={`h-5 w-9 rounded-full transition-colors ${form.requiresAuth ? "bg-primary/30" : "bg-muted"}`} />
-              <div className={`absolute top-[3px] h-3.5 w-3.5 rounded-full shadow transition-all ${
+              <div className={`h-5 w-9 rounded-md transition-colors ${form.requiresAuth ? "bg-primary/30" : "bg-muted"}`} />
+              <div className={`absolute top-[3px] h-3.5 w-3.5 rounded-sm shadow transition-all ${
                 form.requiresAuth ? "left-[18px] bg-primary" : "left-[3px] bg-muted-foreground"
               }`} />
             </span>
@@ -241,7 +248,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -284,7 +291,7 @@ function RateLimitModal({ endpoint, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div className="flex items-center gap-2">
@@ -324,7 +331,7 @@ function RateLimitModal({ endpoint, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -363,7 +370,7 @@ function EndpointBlockIpsModal({ endpoint, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div className="flex items-center gap-2">
@@ -401,7 +408,7 @@ function EndpointBlockIpsModal({ endpoint, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -440,7 +447,7 @@ function EndpointAllowIpsModal({ endpoint, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div className="flex items-center gap-2">
@@ -479,7 +486,7 @@ function EndpointAllowIpsModal({ endpoint, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -509,7 +516,7 @@ function DeleteDialog({ endpoint, onClose, onDeleted }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <Modal onClose={onClose}>
       <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
         <h2 className="text-sm font-semibold">Delete Endpoint</h2>
         <p className="text-sm text-muted-foreground">
@@ -524,7 +531,7 @@ function DeleteDialog({ endpoint, onClose, onDeleted }) {
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -561,11 +568,13 @@ function EnabledToggle({ endpoint, onToggled }) {
       onClick={toggle}
       disabled={busy}
       title={endpoint.isEnabled ? "Enabled – click to disable" : "Disabled – click to enable"}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 cursor-pointer ${
+      role="switch"
+      aria-checked={endpoint.isEnabled}
+      className={`gateway-switch relative inline-flex items-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 cursor-pointer ${
         endpoint.isEnabled ? "bg-primary/30" : "bg-muted"
       }`}
     >
-      <span className={`inline-block h-3.5 w-3.5 rounded-full shadow transition-transform ${
+      <span style={{ borderRadius: 3 }} className={`inline-block h-3.5 w-3.5 rounded-sm shadow transition-transform ${
         endpoint.isEnabled ? "translate-x-[18px] bg-primary" : "translate-x-[2px] bg-muted-foreground"
       }`} />
     </button>
@@ -585,7 +594,7 @@ function TableSkeleton() {
             <Skeleton className="h-4 flex-1" />
             <Skeleton className="h-4 w-20" />
             <Skeleton className="h-5 w-12 rounded-full" />
-            <Skeleton className="h-5 w-9 rounded-full" />
+            <Skeleton className="h-5 w-9 rounded-md" />
             <Skeleton className="h-8 w-16 rounded-md" />
           </div>
         ))}
@@ -596,23 +605,29 @@ function TableSkeleton() {
 
 // ── Main tab ──────────────────────────────────────────────────────────────────
 export default function EndpointsTab() {
+  const { toast } = useToast()
+  const copyUrl = async url => {
+    try { await navigator.clipboard.writeText(url); toast({ title: "Proxy URL copied" }) }
+    catch { toast({ title: "Could not copy — select the URL and copy manually", variant: "destructive" }) }
+  }
+  const [search, setSearch] = useState("")
   const [selectedGroupId, setSelectedGroupId] = useState("all")
   const [modal, setModal]     = useState(null)
   const [toDelete, setToDelete] = useState(null)
 
   // Groups list (fetch once for dropdown)
-  const { data: groups } = useFetchWithRefetch("/api/management/groups", 0)
+  const { data: groups, error: groupsError } = useFetchWithRefetch("/api/management/groups", 5000)
 
   // Endpoints – reactive to selected group
   const epUrl = selectedGroupId === "all"
     ? "/api/management/endpoints"
     : `/api/management/endpoints?groupId=${selectedGroupId}`
-  const { data: endpoints, loading, refetch } = useFetchWithRefetch(epUrl, 5000)
+  const { data: endpoints, loading, error, refetch } = useFetchWithRefetch(epUrl, 5000)
 
   const refresh = useCallback(() => refetch?.(), [refetch])
 
   const groupList = groups ?? []
-  const epList    = endpoints ?? []
+  const epList = (endpoints ?? []).filter(ep => (selectedGroupId === "all" || ep.groupId === selectedGroupId) && `${ep.name} ${ep.pathPattern} ${ep.destination}`.toLowerCase().includes(search.toLowerCase()))
 
   // Build group name and enabled-state lookup
   const groupMeta  = id => groupList.find(g => g.id === id)
@@ -640,7 +655,7 @@ export default function EndpointsTab() {
       {/* Header bar */}
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-semibold">API Routes</h2>
+          <h2 className="text-base font-semibold">Configured endpoints</h2>
           <p className="text-xs text-muted-foreground mt-0.5">{epList.length} route{epList.length !== 1 ? "s" : ""}</p>
         </div>
 
@@ -656,17 +671,20 @@ export default function EndpointsTab() {
           >
             <option value="all">All groups</option>
             {groupList.map(g => (
-              <option key={g.id} value={g.id}>{g.name}</option>
+              <option key={g.id} value={g.id}>{g.name} · /{g.path}</option>
             ))}
           </SelectInput>
         </div>
 
-        <Button onClick={() => setModal({ mode: "create" })} className="shrink-0">
-          <Plus className="w-4 h-4" /> New API Route
+        <Button disabled={!groupList.length || !!groupsError} onClick={() => setModal({ mode: "create" })} className="shrink-0">
+          <Plus className="w-4 h-4" /> New Endpoint
         </Button>
       </div>
 
       {/* Table */}
+      {(error || groupsError) && <div role="alert" className="route-preview text-destructive">Could not refresh configuration. Displayed data may be outdated. <Button variant="outline" onClick={refresh}>Retry</Button></div>}
+      {!groupList.length && !groupsError && <p className="text-sm text-muted-foreground">Create a group in Groups before adding an endpoint.</p>}
+      <input type="search" aria-label="Search endpoints" placeholder="Search name, path or destination…" value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:max-w-sm border rounded-lg bg-card px-3 py-2 text-sm" />
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -688,7 +706,7 @@ export default function EndpointsTab() {
                 {epList.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-12 text-muted-foreground text-xs">
-                      No endpoints yet. Click <span className="text-primary">+ New Endpoint</span> to add one.
+                      {search || selectedGroupId !== "all" ? "No endpoints match these filters." : "No endpoints yet. Add an endpoint to connect a service."}
                     </TableCell>
                   </TableRow>
                 )}
@@ -713,7 +731,14 @@ export default function EndpointsTab() {
                       </div>
                     </TableCell>
                     <TableCell className="font-medium font-mono text-sm">{ep.name}</TableCell>
-                    <TableCell className="font-mono text-xs text-blue-400">{ep.pathPattern}</TableCell>
+                    <TableCell className="font-mono text-xs text-blue-400">
+                      <div>{ep.pathPattern}</div>
+                      {groupMeta(ep.groupId) && (() => {
+                        const pattern = ep.pathPattern.replace(/\/\{\*\*?[^}]+\}$/, "")
+                        const url = `${window.location.origin}/${groupMeta(ep.groupId).path}${pattern}`
+                        return <div className="mt-2 flex items-center gap-2"><input aria-label={`Proxy URL for ${ep.name}`} readOnly value={url} className="min-w-64 border rounded-md p-2 text-foreground bg-background" onFocus={e => e.target.select()} /><Button variant="outline" size="icon" aria-label={`Copy proxy URL for ${ep.name}`} title="Copy URL" onClick={() => copyUrl(url)}><Copy aria-hidden="true" /></Button>{pattern.includes("{") && <span>Replace path parameters before calling</span>}</div>
+                      })()}
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground max-w-[180px] truncate">{ep.destination}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {ep.removePrefix || <span className="text-muted-foreground/40">—</span>}
@@ -773,6 +798,7 @@ export default function EndpointsTab() {
                     <TableCell className="text-center">
                       <div title={isGroupOff ? "Group is disabled — enable the group first to make this route callable" : undefined}>
                         <EnabledToggle endpoint={ep} onToggled={refresh} />
+
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
@@ -780,7 +806,7 @@ export default function EndpointsTab() {
                         {/* Policy icon actions */}
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
                           onClick={() => setModal({ mode: "rateLimit", endpoint: ep })}
                           title="Rate limit"
                           className="h-7 px-2 text-blue-400 hover:text-blue-300 hover:bg-blue-400/10"
@@ -789,7 +815,7 @@ export default function EndpointsTab() {
                         </Button>
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
                           onClick={() => setModal({ mode: "blockIps", endpoint: ep })}
                           title="Block IPs"
                           className="h-7 px-2 text-red-400 hover:text-red-300 hover:bg-red-400/10"
@@ -809,16 +835,18 @@ export default function EndpointsTab() {
                         <Button
                           variant="outline"
                           size="sm"
+                          aria-label={`Edit ${ep.name}`} title="Edit"
                           onClick={() => setModal({ mode: "edit", endpoint: ep })}
                         >
-                          <Pencil className="w-3 h-3" /> Edit
+                          <Pencil aria-hidden="true" className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="destructive"
                           size="sm"
+                          aria-label={`Delete ${ep.name}`} title="Delete"
                           onClick={() => setToDelete(ep)}
                         >
-                          <Trash2 className="w-3 h-3" /> Delete
+                          <Trash2 aria-hidden="true" className="w-4 h-4" />
                         </Button>
                       </div>
                     </TableCell>

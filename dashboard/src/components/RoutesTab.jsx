@@ -1,69 +1,35 @@
-import useFetch from "../hooks/useFetch"
+import { ArrowDown, ExternalLink, RefreshCw, Server } from "lucide-react"
+import { useFetchWithRefetch } from "../hooks/useFetch"
+import { Button } from "./ui/Button"
 import { Card, CardContent } from "./ui/Card"
-import { Badge } from "./ui/Badge"
-import { Skeleton } from "./ui/Skeleton"
-import { ArrowRight, Route, Server } from "lucide-react"
 
-function RoutesSkeleton() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Card key={i}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-5 w-20 rounded-full" />
-              <Skeleton className="h-5 w-16 rounded-full" />
-            </div>
-            <Skeleton className="h-3 w-48" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  )
+function forwardedPath(route) {
+  const prefix = route.removePrefix
+  const path = route.path || "/"
+  const matches = prefix && (path.toLowerCase() === prefix.toLowerCase() || path.toLowerCase().startsWith(`${prefix.toLowerCase()}/`))
+  return matches ? path.slice(prefix.length) || "/" : path
 }
 
-function EmptyState() {
-  return (
-    <Card>
-      <CardContent className="p-8 text-center">
-        <Route className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-        <p className="text-sm font-medium text-muted-foreground">No routes configured</p>
-        <p className="text-xs text-muted-foreground mt-1">Each endpoint maps to its own cluster → destination. Add endpoints to see routes here.</p>
-      </CardContent>
-    </Card>
-  )
+function Mapping({ route, destination }) {
+  const publicUrl = `${window.location.origin}${route.path}`
+  const upstreamUrl = `${destination.replace(/\/+$/, "")}${forwardedPath(route)}`
+  return <div className="mapping-flow"><div><span>Public request</span><code>{publicUrl}</code></div><ArrowDown aria-hidden="true" /><div><span>Forwarded to</span><code>{upstreamUrl}</code></div></div>
 }
 
-export default function RoutesTab() {
-  const { data: routes, loading } = useFetch("/api/management/routes", 5000)
+export default function RoutesTab({ backend = false }) {
+  const { data, error, loading, refetch } = useFetchWithRefetch("/api/management/route-mappings", 10000)
+  const routes = data ?? []
+  const targets = [...new Set(routes.flatMap(route => route.destinations))]
+  const sections = backend ? targets.map(address => ({ address, routes: routes.filter(route => route.destinations.includes(address)) })) : null
+  const heading = backend ? "Backend targets" : "Active routes"
+  const subtitle = backend ? "Each target lists the public routes currently forwarding to it." : "Routes loaded by the proxy. Disabled groups and endpoints are not included."
+  return <div className="space-y-4">
+    <div className="dashboard-toolbar"><div><p className="eyebrow">Current proxy configuration</p><p className="text-sm text-muted-foreground">{subtitle}</p></div><Button variant="outline" onClick={refetch}><RefreshCw aria-hidden="true" /> Refresh</Button></div>
 
-  if (loading) return <RoutesSkeleton />
-
-  return (
-    <div className="space-y-3">
-      {routes?.map((r, i) => (
-        <Card key={i} className="hover:border-primary/20 transition-colors">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <Badge variant="success" className="font-mono text-sm font-bold">{r.routeId}</Badge>
-              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
-              <Badge variant="secondary" className="font-mono gap-1">
-                <Server className="w-3 h-3" />{r.clusterId}
-              </Badge>
-            </div>
-            <div className="mt-2 font-mono text-xs text-muted-foreground">{r.matchPath}</div>
-            {r.transforms?.length > 0 && (
-              <div className="mt-2 flex gap-1.5 flex-wrap">
-                {r.transforms.map((t, j) => (
-                  <Badge key={j} variant="secondary" className="text-[10px] font-mono">{t}</Badge>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
-      {(!routes || routes.length === 0) && <EmptyState />}
-    </div>
-  )
+    {error && <p role="alert" className="route-preview text-destructive">Could not refresh route mappings. Displayed configuration may be outdated.</p>}
+    {loading && <p role="status">Loading {heading.toLowerCase()}…</p>}
+    {!loading && !routes.length && <div className="empty-state"><ExternalLink aria-hidden="true" /><strong>No active routes</strong><span>Add an endpoint and enable its group and endpoint to make a public route available.</span></div>}
+    {!backend && routes.map(route => <Card key={route.routeId} className="mapping-card"><CardContent className="p-5"><div className="mapping-card__header"><div><p className="eyebrow">{route.group || "Ungrouped service"}</p><h2>{route.name}</h2></div><span className="route-chip">{route.destinations.length} target{route.destinations.length === 1 ? "" : "s"}</span></div>{route.destinations.map(destination => <Mapping key={destination} route={route} destination={destination} />)}{!route.destinations.length && <p className="text-sm text-destructive">No destination is loaded for this route.</p>}</CardContent></Card>)}
+    {backend && sections?.map(({ address, routes: targetRoutes }) => <Card key={address} className="target-card"><CardContent className="p-5"><div className="target-card__header"><Server aria-hidden="true" /><div><p className="eyebrow">Backend target</p><code>{address}</code></div><span className="route-chip">{targetRoutes.length} route{targetRoutes.length === 1 ? "" : "s"}</span></div><div className="target-routes">{targetRoutes.map(route => <div key={route.routeId}><strong>{route.group ? `${route.group} · ` : ""}{route.name}</strong><code>{window.location.origin}{route.path}</code></div>)}</div></CardContent></Card>)}
+  </div>
 }

@@ -61,6 +61,7 @@ export default function useFetch(url, interval = 0) {
  */
 export function useFetchWithRefetch(url, interval = 0) {
   const [data,    setData]    = useState(null)
+  const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tick,    setTick]    = useState(0)
 
@@ -79,9 +80,9 @@ export function useFetchWithRefetch(url, interval = 0) {
         }
         if (!res.ok) throw new Error(res.statusText)
         const json = await res.json()
-        if (!cancelled) setData(json)
-      } catch {
-        // Network errors are silently ignored; data stays stale.
+        if (!cancelled) { setData(json); setError(null) }
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Unable to load data")
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -91,5 +92,5 @@ export function useFetchWithRefetch(url, interval = 0) {
     return () => { cancelled = true; if (timer) clearInterval(timer) }
   }, [url, interval, tick])
 
-  return { data, loading, refetch }
+  return { data, loading, error, refetch }
 }
