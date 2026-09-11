@@ -4,22 +4,24 @@ services:
     ports:
       - "5000:8080"
     environment:
-      # Admin JWT signing (Authentication:Jwt:* in code). No baked-in default:
-      # compose fails fast when the host does not provide the secret.
-      - Authentication__Jwt__Secret=${JWT_SECRET:?JWT_SECRET is required (32+ chars)}
-      - Authentication__Jwt__Issuer=EnglishLearning.Auth
-      - Authentication__Jwt__Audience=EnglishLearning.Gateway
-      # Google OAuth for the management dashboard + admin email allowlist.
-      - Authentication__Google__ClientId=${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
-      - Authentication__Google__ClientSecret=${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
-      - Authentication__AllowedEmails=${GATEWAY_ALLOWED_EMAILS:?GATEWAY_ALLOWED_EMAILS is required (comma-separated)}
-      - ConnectionStrings__Gateway=Host=postgres;Database=gateway;Username=gateway;Password="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Authentication__Jwt__Secret: ${JWT_SECRET:?JWT_SECRET is required (32+ bytes)}
+      Authentication__Jwt__Issuer: Gateway.Admin
+      Authentication__Jwt__Audience: Gateway.Dashboard
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
+      Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
+      Authentication__AllowedEmails: ${GATEWAY_ALLOWED_EMAILS:?GATEWAY_ALLOWED_EMAILS is required (comma-separated)}
+      ConnectionStrings__Gateway: Host=postgres;Database=gateway;Username=gateway;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
-
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080; printf \"GET /health HTTP/1.0\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     networks:
       - gateway-net
     restart: unless-stopped
@@ -37,33 +39,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-    networks:
-      - gateway-net
-    restart: unless-stopped
-
-  # Auth Service
-  auth-service:
-    image: englishlearning-auth:latest
-    environment:
-      - ASPNETCORE_URLS=http://+:5100
-    networks:
-      - gateway-net
-    restart: unless-stopped
-
-  # Learning Service
-  learning-service:
-    image: englishlearning-learning:latest
-    environment:
-      - ASPNETCORE_URLS=http://+:5101
-    networks:
-      - gateway-net
-    restart: unless-stopped
-
-  # AI Service
-  ai-service:
-    image: englishlearning-ai:latest
-    environment:
-      - ASPNETCORE_URLS=http://+:5102
     networks:
       - gateway-net
     restart: unless-stopped

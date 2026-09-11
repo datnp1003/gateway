@@ -1,9 +1,12 @@
 **/bin
 **/obj
+**/node_modules
 **/.git
 **/.vs
 **/.vscode
 **/logs
+**/TestResults
+.vite
 *.user
 **/*.db
 **/*.db-shm
