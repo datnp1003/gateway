@@ -91,6 +91,7 @@ public class DashboardReadTests
         Assert.Equal("/safe/{**path}", recent.RequestPath);
         Assert.Equal(503, recent.LatestResponseStatus);
         var observedGroup = Assert.Single(overview.Groups);
+        Assert.Equal(3, observedGroup.Attempts);
         Assert.Equal(1, observedGroup.ObservedEndpoints);
         Assert.Equal(1, observedGroup.SuccessfulResponses);
 

@@ -29,7 +29,7 @@ public sealed class ProxyOperationsQueryService
         var todayStart = now.Date;
         // Calendar-day axis: buckets from 00:00 UTC today up to `now` only (elapsed hours). Future hours are not queried so no zero traffic is fabricated; the full-day axis end is advertised via the overview `windows.traffic` metadata.
         var traffic = await ReadSeriesAsync(todayStart, now, TimeSpan.FromHours(1), null, null, ct);
-        var groups = await ReadGroupsAsync(now.AddMinutes(-1), now, ct);
+        var groups = await ReadGroupsAsync(now.AddHours(-1), now, ct);
         // One aggregate for every displayed group's 1h minute buckets (now-1h → now); no per-group query loop.
         var groupsHourly = await ReadGroupSeriesAsync(now.AddHours(-1), now, TimeSpan.FromMinutes(1), groups.Select(group => group.GroupId).ToArray(), ct);
         return new OverviewOperations(minute, previousMinute, await ReadMetricsAsync(todayStart, now, null, null, ct), await ReadMetricsAsync(todayStart.AddDays(-1), todayStart, null, null, ct), await ReadMetricsAsync(now.AddHours(-1), now, null, null, ct), traffic,
