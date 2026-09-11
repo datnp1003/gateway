@@ -23,7 +23,7 @@ public class RequestLoggingMiddleware
         var method = context.Request.Method;
         var clientIp = context.Connection.RemoteIpAddress?.ToString();
         var requestId = context.TraceIdentifier;
-        var isInternal = IsInternalRequest(context.Request.Path);
+        var isInternal = RequestLogScope.IsInternal(path);
 
         try
         {
@@ -31,10 +31,10 @@ public class RequestLoggingMiddleware
             var elapsed = DateTime.UtcNow - start;
             var statusCode = context.Response.StatusCode;
 
-            if (!isInternal)
+            if (!isInternal && context.Features.Get<Yarp.ReverseProxy.Model.IReverseProxyFeature>() != null)
             {
                 _logger.LogInformation(
-                    "[{Method}] {Path} -> {StatusCode} ({Elapsed}ms)",
+                    "[ProxyRequest] [{Method}] {Path} -> {StatusCode} ({Elapsed}ms)",
                     method,
                     path,
                     statusCode,
@@ -74,14 +74,5 @@ public class RequestLoggingMiddleware
         }
     }
 
-    private static bool IsInternalRequest(PathString path)
-    {
-        return path.StartsWithSegments("/api/management")
-            || path.StartsWithSegments("/health")
-            || path.StartsWithSegments("/assets")
-            || path.StartsWithSegments("/favicon.svg")
-            || path.StartsWithSegments("/@vite")
-            || path.StartsWithSegments("/src")
-            || path == "/";
-    }
+
 }

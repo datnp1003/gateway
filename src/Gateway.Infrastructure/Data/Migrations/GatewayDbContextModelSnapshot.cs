@@ -22,6 +22,28 @@ namespace Gateway.Infrastructure.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Gateway.Domain.Entities.ProxyRequestEvent", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<DateTime>("CompletedAt").HasColumnType("timestamp with time zone");
+                    b.Property<string>("ConfiguredDestination").IsRequired().HasMaxLength(512).HasColumnType("character varying(512)");
+                    b.Property<double?>("DurationMs").HasColumnType("double precision");
+                    b.Property<Guid>("EndpointId").HasColumnType("uuid");
+                    b.Property<string>("EndpointName").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+                    b.Property<Guid>("GroupId").HasColumnType("uuid");
+                    b.Property<string>("GroupName").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+                    b.Property<string>("Method").IsRequired().HasMaxLength(16).HasColumnType("character varying(16)");
+                    b.Property<DateTime>("OccurredAt").HasColumnType("timestamp with time zone");
+                    b.Property<string>("Outcome").IsRequired().HasMaxLength(32).HasColumnType("character varying(32)");
+                    b.Property<string>("RequestPath").IsRequired().HasMaxLength(2048).HasColumnType("character varying(2048)");
+                    b.Property<int?>("ResponseStatus").HasColumnType("integer");
+                    b.HasKey("Id");
+                    b.HasIndex("EndpointId", "OccurredAt", "Id");
+                    b.HasIndex("GroupId", "OccurredAt", "Id");
+                    b.HasIndex("OccurredAt", "Id");
+                    b.ToTable("ProxyRequestEvents");
+                });
+
             modelBuilder.Entity("Gateway.Domain.Entities.ProxyEndpoint", b =>
                 {
                     b.Property<Guid>("Id")

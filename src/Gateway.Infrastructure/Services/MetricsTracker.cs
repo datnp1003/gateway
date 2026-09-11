@@ -65,9 +65,7 @@ public class MetricsTracker : IMetricsTracker
         var count = _recentRequests.Count;
         if (count == 0) return 0;
 
-        var oldest = _recentRequests.TryPeek(out var first) ? first.Timestamp : DateTime.UtcNow;
-        var span = (DateTime.UtcNow - oldest).TotalSeconds;
-        return span > 0 ? count / span : count;
+        return count / 60.0;
     }
 
     public double GetErrorRate()
