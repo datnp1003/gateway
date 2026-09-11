@@ -115,7 +115,7 @@ public class ProductionConfigTests : IClassFixture<WebApplicationFactory<Program
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         Assert.Equal("Npgsql.EntityFrameworkCore.PostgreSQL", db.Database.ProviderName);
-        Assert.Equal(2, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Single(await db.Database.GetAppliedMigrationsAsync());
         Assert.False(db.Database.HasPendingModelChanges());
         await db.Database.MigrateAsync();
         Assert.Single(await db.Groups.ToListAsync());

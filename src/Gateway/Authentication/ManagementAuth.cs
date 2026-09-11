@@ -130,9 +130,7 @@ public static class ManagementAuth
     public static void MapAuthEndpoints(this WebApplication app)
     {
         var devBypass = IsDevBypass(app.Configuration, app.Environment);
-        var auth = app.MapGroup("/api/auth")
-            .RequireCors("GatewayManagement")
-            .RequireRateLimiting("auth");
+        var auth = app.MapGroup("/api/auth").RequireRateLimiting("auth");
 
         // Step 1: FE asks where to send the browser. Login must only start on an
         // explicit user click, never automatically on page load.

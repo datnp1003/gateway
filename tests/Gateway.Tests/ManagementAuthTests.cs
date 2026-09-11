@@ -122,32 +122,16 @@ public class ManagementAuthTests : IClassFixture<WebApplicationFactory<Program>>
 
     // ── Management API enforcement ──
 
-    [Theory]
-    [InlineData("/api/management/routes")]
-    [InlineData("/api/management/route-mappings")]
-    [InlineData("/api/management/logs/page")]
-    [InlineData("/api/management/operations/ingestion")]
-    [InlineData("/api/management/operations/configuration")]
-    [InlineData("/api/management/operations/events?from=2026-09-08T00:00:00Z&to=2026-09-08T01:00:00Z")]
-    [InlineData("/api/management/operations/summary")]
-    [InlineData("/api/management/operations/overview")]
-    public async Task ManagementApi_WithoutBearer_Returns401(string url)
+    [Fact]
+    public async Task ManagementApi_WithoutBearer_Returns401()
     {
         var client = CreateClient(devBypass: false);
-        var response = await client.GetAsync(url);
+        var response = await client.GetAsync("/api/management/routes");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    [Theory]
-    [InlineData("/api/management/routes")]
-    [InlineData("/api/management/route-mappings")]
-    [InlineData("/api/management/logs/page?page=2&pageSize=25")]
-    [InlineData("/api/management/operations/ingestion")]
-    [InlineData("/api/management/operations/configuration")]
-    [InlineData("/api/management/operations/events?from=2026-09-08T00:00:00Z&to=2026-09-08T01:00:00Z")]
-    [InlineData("/api/management/operations/summary")]
-    [InlineData("/api/management/operations/overview")]
-    public async Task ManagementApi_WithAllowlistedBearer_Returns200(string url)
+    [Fact]
+    public async Task ManagementApi_WithAllowlistedBearer_Returns200()
     {
         var factory = CreateFactory(devBypass: false);
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -155,7 +139,7 @@ public class ManagementAuthTests : IClassFixture<WebApplicationFactory<Program>>
             .Issue("admin@example.com", "Admin", null);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        var response = await client.GetAsync(url);
+        var response = await client.GetAsync("/api/management/routes");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 

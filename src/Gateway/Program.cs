@@ -27,10 +27,6 @@ try
 
     var loggerConfig = new LoggerConfiguration()
         .MinimumLevel.Information()
-        .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("System.Net.Http.HttpClient", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Yarp.ReverseProxy", Serilog.Events.LogEventLevel.Warning)
         .WriteTo.Console()
         .WriteTo.File("logs/gateway-.log", rollingInterval: RollingInterval.Day);
 
@@ -74,11 +70,6 @@ try
     // ─── Dashboard services ───
     builder.Services.AddSingleton<ILogBuffer, LogBuffer>();
     builder.Services.AddSingleton<IMetricsTracker, MetricsTracker>();
-    builder.Services.AddScoped<ProxyOperationsQueryService>();
-    builder.Services.AddSingleton<ProxyAttemptWriter>();
-    builder.Services.AddSingleton<IProxyAttemptSink>(sp => sp.GetRequiredService<ProxyAttemptWriter>());
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<ProxyAttemptWriter>());
-    builder.Services.AddHostedService<ProxyEventRetentionService>();
 
     // ─── Auth ───
     // Proxy routes stay pass-through: downstream services own auth/authorization,
@@ -94,7 +85,6 @@ try
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
         options.OnRejected = async (context, ct) =>
         {
-            context.HttpContext.Items[Gateway.Middleware.ProxyAttemptProvenance.GatewayRejectedKey] = true;
             var logBuffer = context.HttpContext.RequestServices.GetRequiredService<ILogBuffer>();
             logBuffer.AddWarning(
                 message: $"Rate limit exceeded: {context.HttpContext.Request.Method} {context.HttpContext.Request.Path}",
@@ -142,10 +132,10 @@ try
                 }));
     });
 
-    // ─── Gateway management CORS ───
+    // ─── CORS ───
     builder.Services.AddCors(options =>
     {
-        options.AddPolicy("GatewayManagement", policy =>
+        options.AddPolicy("AllowFrontend", policy =>
         {
             policy.WithOrigins(
                     "http://localhost:3000",
@@ -219,14 +209,10 @@ try
     }
 
     app.UseMiddleware<Gateway.Middleware.ExceptionHandlingMiddleware>();
-    app.UseRouting();
-    app.UseMiddleware<Gateway.Middleware.ProxyAttemptCaptureMiddleware>();
     app.UseMiddleware<Gateway.Middleware.RequestLoggingMiddleware>();
     app.UseMiddleware<Gateway.Middleware.EndpointAccessPolicyMiddleware>();
-
-    // Only endpoint metadata opts into Gateway-managed CORS. Proxy routes keep
-    // downstream CORS behavior and forward preflight requests unchanged.
-    app.UseCors();
+    app.UseSerilogRequestLogging();
+    app.UseCors("AllowFrontend");
     app.UseRateLimiter();
     app.UseAuthentication();
     app.UseAuthorization();

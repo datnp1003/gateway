@@ -61,13 +61,7 @@ public class YarpConfigSyncService : IYarpConfigSyncService
                     Transforms = transforms,
                     // Global per-IP proxy limit; per-endpoint limits are enforced
                     // separately in EndpointAccessPolicyMiddleware.
-                    RateLimiterPolicy = "proxy",
-                    Metadata = new Dictionary<string, string>
-                    {
-                        ["gateway.endpoint_id"] = e.Id.ToString(), ["gateway.group_id"] = e.GroupId.ToString(),
-                        ["gateway.endpoint_name"] = e.Name, ["gateway.group_name"] = e.Group.Name,
-                        ["gateway.configured_destination"] = SafeDestination(e.Destination), ["gateway.route_pattern"] = fullPath
-                    }
+                    RateLimiterPolicy = "proxy"
                 };
             }).ToList();
 
@@ -98,11 +92,5 @@ public class YarpConfigSyncService : IYarpConfigSyncService
         {
             _syncLock.Release();
         }
-    }
-
-    private static string SafeDestination(string destination)
-    {
-        if (!Uri.TryCreate(destination, UriKind.Absolute, out var uri)) return "invalid";
-        return uri.GetLeftPart(UriPartial.Authority);
     }
 }

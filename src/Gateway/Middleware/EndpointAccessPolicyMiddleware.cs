@@ -82,7 +82,6 @@ public class EndpointAccessPolicyMiddleware
             var blocked = ParseRanges(blockedRaw);
             if (remoteIp != null && IpMatchesAny(remoteIp, clientIp, blocked))
             {
-                context.Items[ProxyAttemptProvenance.GatewayRejectedKey] = true;
                 _logBuffer.AddWarning(
                     $"Access denied (blocked IP): {clientIp} → {path}",
                     path: path, method: context.Request.Method, clientIp: clientIp);
@@ -98,7 +97,6 @@ public class EndpointAccessPolicyMiddleware
             var allowed = ParseRanges(allowedRaw);
             if (remoteIp == null || !IpMatchesAny(remoteIp, clientIp, allowed))
             {
-                context.Items[ProxyAttemptProvenance.GatewayRejectedKey] = true;
                 _logBuffer.AddWarning(
                     $"Access denied (not in allowlist): {clientIp} → {path}",
                     path: path, method: context.Request.Method, clientIp: clientIp);
@@ -137,7 +135,6 @@ public class EndpointAccessPolicyMiddleware
 
             if (rateLimitExceeded)
             {
-                context.Items[ProxyAttemptProvenance.GatewayRejectedKey] = true;
                 _logBuffer.AddWarning(
                     $"Rate limit exceeded ({endpoint.RateLimitPerMinute}/min): {clientIp} → {path}",
                     path: path, method: context.Request.Method, clientIp: clientIp);
