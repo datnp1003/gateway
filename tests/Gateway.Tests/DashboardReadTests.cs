@@ -64,6 +64,11 @@ public class DashboardReadTests
         var now = new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc);
         await using var db = new GatewayDbContext(options);
         await db.Database.MigrateAsync();
+        db.Groups.Add(new ProxyGroup
+        {
+            Id = group, Name = "group", Path = "group",
+            Endpoints = [new ProxyEndpoint { Id = endpoint, Name = "orders", PathPattern = "/{**path}", Destination = "https://backend.example" }]
+        });
         db.ProxyRequestEvents.AddRange(
             Event(now.AddSeconds(-20), endpoint, group, "orders", "upstream_response", 200, 100),
             Event(now.AddSeconds(-10), endpoint, group, "orders", "upstream_response", 503, 300),
@@ -102,6 +107,33 @@ public class DashboardReadTests
         Assert.Equal(2, groupSeries.Value.Single(bucket => bucket.From == now.AddMinutes(-1)).Attempts);
         Assert.Equal(1, groupSeries.Value.Single(bucket => bucket.From == now.AddMinutes(-3)).Attempts);
         Assert.Equal(58, groupSeries.Value.Count(bucket => bucket.Attempts == 0));
+    }
+
+    [Fact]
+    public async Task Overview_ShowsConfiguredTopFiveGroupsWhenThereIsNoRecentTraffic()
+    {
+        using var database = new TestDatabase();
+        var options = new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(database.ConnectionString).Options;
+        await using var db = new GatewayDbContext(options);
+        await db.Database.MigrateAsync();
+        db.Groups.AddRange(Enumerable.Range(0, 6).Select(i => new ProxyGroup
+        {
+            Id = Guid.NewGuid(), Name = $"group-{i}", Path = $"group-{i}",
+            Endpoints = [new ProxyEndpoint { Name = $"endpoint-{i}", PathPattern = "/{**path}", Destination = "https://backend.example" }]
+        }));
+        await db.SaveChangesAsync();
+
+        var overview = await new ProxyOperationsQueryService(db).GetOverviewAsync(new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc), CancellationToken.None);
+
+        Assert.Equal(5, overview.Groups.Count);
+        Assert.All(overview.Groups, group =>
+        {
+            Assert.Equal(0, group.Attempts);
+            Assert.Equal(1, group.ObservedEndpoints);
+            Assert.Equal(0, group.SuccessfulResponses);
+            Assert.Equal(60, overview.GroupsHourly[group.GroupId].Count);
+            Assert.All(overview.GroupsHourly[group.GroupId], bucket => Assert.Equal(0, bucket.Attempts));
+        });
     }
 
     private static ProxyRequestEvent Event(DateTime occurredAt, Guid endpointId, Guid groupId, string endpointName, string outcome, int? status, double? duration) => new()

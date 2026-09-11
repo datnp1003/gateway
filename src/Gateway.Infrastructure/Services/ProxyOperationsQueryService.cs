@@ -93,10 +93,17 @@ public sealed class ProxyOperationsQueryService
     private async Task<IReadOnlyList<OverviewGroup>> ReadGroupsAsync(DateTime start, DateTime end, CancellationToken ct)
     {
         const string sql = """
-            SELECT "GroupId", max("GroupName"), count(*)::bigint, count(DISTINCT "EndpointId")::int,
-                   count(*) FILTER (WHERE "Outcome" = 'upstream_response' AND "ResponseStatus" < 400)::bigint
-            FROM "ProxyRequestEvents" WHERE "OccurredAt" >= @start AND "OccurredAt" < @end
-            GROUP BY "GroupId" ORDER BY count(*) DESC, "GroupId" LIMIT 5
+            WITH recent AS (
+                SELECT "GroupId", count(*)::bigint AS attempts,
+                       count(*) FILTER (WHERE "Outcome" = 'upstream_response' AND "ResponseStatus" < 400)::bigint AS successful
+                FROM "ProxyRequestEvents" WHERE "OccurredAt" >= @start AND "OccurredAt" < @end GROUP BY "GroupId"
+            )
+            SELECT groups."Id", groups."Name", coalesce(recent.attempts, 0), count(endpoints."Id")::int, coalesce(recent.successful, 0)
+            FROM "Groups" groups
+            LEFT JOIN recent ON recent."GroupId" = groups."Id"
+            LEFT JOIN "Endpoints" endpoints ON endpoints."GroupId" = groups."Id"
+            GROUP BY groups."Id", groups."Name", recent.attempts, recent.successful
+            ORDER BY coalesce(recent.attempts, 0) DESC, groups."Id" LIMIT 5
             """;
         var result = new List<OverviewGroup>();
         await using var command = await CreateCommandAsync(sql, start, end, null, null, ct);
