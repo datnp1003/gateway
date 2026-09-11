@@ -74,7 +74,7 @@ button { touch-action: manipulation; }
 .app-sidebar nav span { font-size: 13px; font-weight: 600; }
 .app-workspace { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .app-workspace > header { min-height: 70px; gap: 12px; }
-.workspace-content { flex: 1; min-height: 0; overflow: auto; padding: 32px clamp(16px, 3vw, 48px) 60px; max-width: 1760px; width: 100%; margin: auto; }
+.workspace-content { flex: 1; min-height: 0; overflow: auto; padding: 32px clamp(16px, 2vw, 32px) 60px; width: 100%; }
 .skip-link { position: fixed; left: 12px; top: -100px; z-index: 100; background: white; padding: 12px; }
 .skip-link:focus { top: 12px; }
 .workspace-content .bg-gradient-to-br, .workspace-content .bg-gradient-to-r { background-image: none; background-color: white; border-color: hsl(var(--border)); }
