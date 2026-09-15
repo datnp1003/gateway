@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { createServer } from "vite"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
+process.env.TZ = "UTC" // Deterministic UTC fixture; production labels use browser-local time.
 
 // Focused tests for the calendar-day Traffic axis: fixed 00:00->00:00 bounds, x placement against those
 // bounds (not first/last observed), boundary + intermediate tick labels, day rollover, and sparse/empty data.
@@ -26,7 +27,7 @@ try {
   assert.match(sparse, /398\./, "second sparse point anchored to 22:00 of the day")
 
   // Tick labels: both boundary 00:00 (with date) plus 06/12/18 present; axis declared UTC.
-  assert.match(one, /times shown in UTC/)
+  assert.match(one, /times shown in the browser time zone/)
   for (const t of ["9\\/11 00:00", "06:00", "12:00", "18:00", "9\\/12 00:00"]) assert.match(one, new RegExp(t), `tick ${t}`)
 
   // Empty day: still a full-bounds axis with both boundary labels, no fabricated points/polyline/counts.

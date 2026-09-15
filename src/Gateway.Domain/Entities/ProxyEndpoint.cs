@@ -8,6 +8,8 @@ public class ProxyEndpoint
     public string PathPattern { get; set; } = string.Empty;
     public string Destination { get; set; } = string.Empty;
     public string? RemovePrefix { get; set; }
+    // Legacy storage only; never an authorization policy or management contract.
+    [System.Text.Json.Serialization.JsonIgnore]
     public bool RequiresAuth { get; set; }
     public bool IsEnabled { get; set; } = true;
     public int? RateLimitPerMinute { get; set; }

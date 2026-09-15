@@ -75,7 +75,7 @@ public static class SeedData
                     PathPattern = pathPattern,
                     Destination = address,
                     RemovePrefix = removePrefix,
-                    RequiresAuth = !string.IsNullOrEmpty(authPolicy),
+
                     IsEnabled = true
                 };
                 db.Endpoints.Add(endpoint);

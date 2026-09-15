@@ -22,17 +22,17 @@ public sealed class ProxyOperationsQueryService
         return new OperationsSummary(current, previous.Attempts == 0 ? null : previous, series, rankings, observedEarliest);
     }
 
-    public async Task<OverviewOperations> GetOverviewAsync(DateTime now, CancellationToken ct)
+    public async Task<OverviewOperations> GetOverviewAsync(DateTime now, CancellationToken ct, DateTime? dayStart = null, DateTime? previousDayStart = null)
     {
         var minute = await ReadMetricsAsync(now.AddMinutes(-1), now, null, null, ct);
         var previousMinute = await ReadMetricsAsync(now.AddMinutes(-2), now.AddMinutes(-1), null, null, ct);
-        var todayStart = now.Date;
-        // Calendar-day axis: buckets from 00:00 UTC today up to `now` only (elapsed hours). Future hours are not queried so no zero traffic is fabricated; the full-day axis end is advertised via the overview `windows.traffic` metadata.
+        var todayStart = dayStart ?? now.Date;
+        // Query only elapsed client-local day; previous midnight is independently DST-resolved.
         var traffic = await ReadSeriesAsync(todayStart, now, TimeSpan.FromHours(1), null, null, ct);
         var groups = await ReadGroupsAsync(now.AddHours(-1), now, ct);
         // One aggregate for every displayed group's 1h minute buckets (now-1h → now); no per-group query loop.
         var groupsHourly = await ReadGroupSeriesAsync(now.AddHours(-1), now, TimeSpan.FromMinutes(1), groups.Select(group => group.GroupId).ToArray(), ct);
-        return new OverviewOperations(minute, previousMinute, await ReadMetricsAsync(todayStart, now, null, null, ct), await ReadMetricsAsync(todayStart.AddDays(-1), todayStart, null, null, ct), await ReadMetricsAsync(now.AddHours(-1), now, null, null, ct), traffic,
+        return new OverviewOperations(minute, previousMinute, await ReadMetricsAsync(todayStart, now, null, null, ct), await ReadMetricsAsync(previousDayStart ?? todayStart.AddDays(-1), todayStart, null, null, ct), await ReadMetricsAsync(now.AddHours(-1), now, null, null, ct), traffic,
             await ReadStatusErrorsAsync(now.AddHours(-1), now, ct), await ReadRecentEndpointsAsync(now.AddMinutes(-5), now, ct), groups, groupsHourly, await ReadObservedEarliestAsync(ct));
     }
 
@@ -131,7 +131,7 @@ public sealed class ProxyOperationsQueryService
     private async Task<IReadOnlyList<OperationsSeriesBucket>> ReadSeriesAsync(DateTime start, DateTime end, TimeSpan bucket, Guid? groupId, Guid? endpointId, CancellationToken ct)
     {
         const string sql = """
-            WITH buckets AS (SELECT series."From", series."From" + @bucket AS "To" FROM generate_series(@start, @end - @bucket, @bucket) AS series("From"))
+            WITH buckets AS (SELECT series."From", LEAST(series."From" + @bucket, @end) AS "To" FROM generate_series(@start, @end - interval '1 microsecond', @bucket) AS series("From"))
             SELECT buckets."From", buckets."To", count(events."Id")::bigint,
                    count(events."Id") FILTER (WHERE events."Outcome" IN ('gateway_rejected','network_failure','gateway_failure') OR (events."Outcome" = 'upstream_response' AND events."ResponseStatus" >= 400))::bigint,
                    avg(events."DurationMs"), percentile_cont(0.95) WITHIN GROUP (ORDER BY events."DurationMs")

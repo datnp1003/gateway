@@ -24,12 +24,11 @@ export default function MetricsChart({ title, samples, series, unit, domain }) {
   const x = point => xAt(Date.parse(timestamp(point)))
   const y = value => 168 - value / max * 140
   const dateTime = value => new Intl.DateTimeFormat(undefined, { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value))
-  // Axis timezone: UTC when the domain is fixed (the overview API advertises timezone "UTC"); browser-local otherwise.
-  const hhmm = ms => new Intl.DateTimeFormat(undefined, { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms))
-  const dayLabel = ms => new Intl.DateTimeFormat(undefined, { timeZone: "UTC", month: "numeric", day: "numeric" }).format(new Date(ms))
-  const ticks = domain ? [0, 6, 12, 18, 24].map(h => start + h * 3600000) : null
+  const hhmm = ms => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms))
+  const dayLabel = ms => new Intl.DateTimeFormat(undefined, { month: "numeric", day: "numeric" }).format(new Date(ms))
+  const ticks = domain ? [0, .25, .5, .75, 1].map(f => start + f * (end - start)) : null
   return <Card><CardHeader><CardTitle>{title}</CardTitle></CardHeader><CardContent><div ref={container}>
-    {!domain && !values.length ? <p role="status" className="h-48 flex items-center text-sm text-muted-foreground">No persisted proxy attempts in this period.</p> : <svg viewBox={`0 0 ${width} 235`} role="img" aria-label={`${title}: ${points.length} persisted time buckets, ${unit}; times shown in ${domain ? "UTC" : "the browser time zone"}`} className="w-full h-[240px]">
+    {!domain && !values.length ? <p role="status" className="h-48 flex items-center text-sm text-muted-foreground">No persisted proxy attempts in this period.</p> : <svg viewBox={`0 0 ${width} 235`} role="img" aria-label={`${title}: ${points.length} persisted time buckets, ${unit}; times shown in the browser time zone`} className="w-full h-[240px]">
       <title>{`${title} — persisted operations buckets`}</title>
       {[0, 0.5, 1].map(f => <g key={f}><line x1={left} x2={right} y1={y(max * f)} y2={y(max * f)} stroke="currentColor" opacity="0.15" /><text x={left - 6} y={y(max * f) + 4} textAnchor="end" fill="currentColor" fontSize="9">{`${(max * f).toFixed(unit === "s" ? 3 : 1)} ${unit}`}</text></g>)}
       {ticks?.map(ms => <line key={`grid${ms}`} x1={xAt(ms)} x2={xAt(ms)} y1={y(max)} y2={y(0)} stroke="currentColor" opacity="0.08" />)}

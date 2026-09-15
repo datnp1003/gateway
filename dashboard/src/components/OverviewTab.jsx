@@ -16,18 +16,19 @@ function MetricCard({ Icon, label, value, comparison }) {
 }
 
 export default function OverviewTab({ onOpenLogs }) {
-  const overview = useFetchWithRefetch("/api/management/operations/overview", 10000)
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const overview = useFetchWithRefetch(`/api/management/operations/overview?timezone=${encodeURIComponent(timezone)}`, 10000)
   const data = overview.data
   const current = data?.requests?.currentMinute
   const previous = data?.requests?.previousMinute
   const today = data?.requests?.today
   const yesterday = data?.requests?.yesterday
   const refresh = () => overview.refetch()
-  // Fixed calendar-day x-axis from the API's advertised window (00:00 → 00:00 next day, UTC); falls back to the current UTC day.
+  // The server resolves each local midnight independently, including across DST.
   const trafficWindow = data?.windows?.traffic
   const trafficDomain = trafficWindow
     ? { start: Date.parse(trafficWindow.from), end: Date.parse(trafficWindow.to) }
-    : (() => { const s = new Date(); s.setUTCHours(0, 0, 0, 0); return { start: s.getTime(), end: s.getTime() + 86400000 } })()
+    : (() => { const s = new Date(); s.setHours(0, 0, 0, 0); const e = new Date(s); e.setDate(e.getDate() + 1); return { start: +s, end: +e } })()
   // Fixed 1h UTC domain for the per-group sparklines, from the API's advertised groupsHourly window; falls back to now-1h→now.
   const groupsWindow = data?.windows?.groupsHourly
   const groupsDomain = groupsWindow
@@ -35,19 +36,19 @@ export default function OverviewTab({ onOpenLogs }) {
     : { start: Date.now() - 3600000, end: Date.now() }
 
   return <div className="space-y-6">
-    <div className="dashboard-toolbar"><div><p className="eyebrow">Observed retained proxy attempts</p><p className="text-xs text-muted-foreground">UTC windows · safe inbound paths; query strings excluded</p></div><Button variant="outline" onClick={refresh}><RefreshCw aria-hidden="true" /> Refresh</Button></div>
+    <div className="dashboard-toolbar"><div><p className="eyebrow">Observed retained proxy attempts</p><p className="text-xs text-muted-foreground">{timezone} · safe inbound paths; query strings excluded</p></div><Button variant="outline" onClick={refresh}><RefreshCw aria-hidden="true" /> Refresh</Button></div>
     {overview.error && <p role="alert" className="route-preview text-destructive">Could not refresh persisted operations.</p>}
     {overview.loading && <p role="status">Loading operations overview…</p>}
 
     <div className="metric-grid">
       <MetricCard Icon={Activity} label="Requests / min" value={number(current?.attempts)} comparison={current ? difference(current.attempts, previous?.attempts) : "Recent UTC minute"} />
-      <MetricCard Icon={Activity} label="Total Today" value={number(today?.attempts)} comparison={today ? difference(today.attempts, yesterday?.attempts) : "Since 00:00 UTC"} />
+      <MetricCard Icon={Activity} label="Total Today" value={number(today?.attempts)} comparison={today ? difference(today.attempts, yesterday?.attempts).replace("vs prior", "vs yesterday") : "Since local midnight"} />
       <MetricCard Icon={TriangleAlert} label="Error Rate" value={current ? percent(current.failedRequests, current.attempts) : "—"} comparison={current ? difference(current.failedRequests * 100 / Math.max(current.attempts, 1), previous ? previous.failedRequests * 100 / Math.max(previous.attempts, 1) : null, " pp") : "Recent UTC minute"} />
       <MetricCard Icon={Clock3} label="Avg Latency" value={seconds(current?.averageLatencyMs)} comparison="Completed attempts with duration" />
     </div>
 
     <div className="overview-pair">
-      <MetricsChart title="Traffic — Today (UTC)" samples={data?.traffic} series={[["attempts", "Requests", "#2563eb"]]} unit="req" domain={trafficDomain} showLegend={false} />
+      <MetricsChart title={`Traffic — Today (${timezone})`} samples={data?.traffic} series={[["attempts", "Requests", "#2563eb"]]} unit="req" domain={trafficDomain} showLegend={false} />
       <Card><CardHeader><CardTitle>Endpoint Groups</CardTitle></CardHeader><CardContent className="group-list">
         {data && !data.groups.length && <p className="text-sm text-muted-foreground">No observed group traffic in this window.</p>}
         {data?.groups?.map(group => <div key={group.groupId} className="group-row"><div><button className="dashboard-link" onClick={() => onOpenLogs({ groupId: group.groupId })}>{group.groupName}</button><code>{number(group.observedEndpoints)} observed endpoint{group.observedEndpoints === 1 ? "" : "s"}</code></div><Sparkline buckets={group.hourly} domain={groupsDomain} label={`${group.groupName} — last hour`} /><span>{number(group.requestsPerMinute)} req/min<br />{group.measuredSuccessPercent == null ? "—" : `${group.measuredSuccessPercent.toFixed(2)}% upstream <400`}</span></div>)}

@@ -196,7 +196,7 @@ input.peer:focus-visible + div { outline: 3px solid hsl(var(--ring)); outline-of
   .group-row > span { text-align: left; }
   .ranking-grid { grid-template-columns: 1fr; }
   .mapping-flow { grid-template-columns: 1fr; }
-  .mapping-flow > svg { transform: rotate(-90deg); margin: -3px 0; }
+  .mapping-flow > svg { transform: rotate(90deg); margin: -3px 0; }
   .target-routes > div { align-items: flex-start; flex-direction: column; gap: 5px; }
   form .select-none { flex-wrap: wrap; }
 }

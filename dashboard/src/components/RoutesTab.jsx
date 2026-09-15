@@ -1,4 +1,4 @@
-import { ArrowDown, ExternalLink, RefreshCw, Server } from "lucide-react"
+import { ArrowRight, ExternalLink, RefreshCw, Server } from "lucide-react"
 import { useFetchWithRefetch } from "../hooks/useFetch"
 import { Button } from "./ui/Button"
 import { Card, CardContent } from "./ui/Card"
@@ -13,7 +13,7 @@ function forwardedPath(route) {
 function Mapping({ route, destination }) {
   const publicUrl = `${window.location.origin}${route.path}`
   const upstreamUrl = `${destination.replace(/\/+$/, "")}${forwardedPath(route)}`
-  return <div className="mapping-flow"><div><span>Public request</span><code>{publicUrl}</code></div><ArrowDown aria-hidden="true" /><div><span>Forwarded to</span><code>{upstreamUrl}</code></div></div>
+  return <div className="mapping-flow"><div><span>Public request</span><code>{publicUrl}</code></div><ArrowRight aria-hidden="true" /><div><span>Forwarded to</span><code>{upstreamUrl}</code></div></div>
 }
 
 export default function RoutesTab({ backend = false }) {

@@ -125,14 +125,21 @@ public static partial class ManagementEndpoints
                 rankings = summary.Rankings.Select(item => new { endpointId = item.EndpointId, endpointName = item.EndpointName, attempts = item.Attempts, failedRequests = item.FailedRequests, p95LatencyMs = item.P95LatencyMs }), data = new { observedEarliestEventAt = summary.ObservedEarliestEventAt, collectionStart = (DateTime?)null, coverage = "observed retained events only; collection start is unavailable after restart" } });
         });
 
-        api.MapGet("/operations/overview", async (ProxyOperationsQueryService queries, CancellationToken ct = default) =>
+        api.MapGet("/operations/overview", async (ProxyOperationsQueryService queries, string? timezone = null, CancellationToken ct = default) =>
         {
+            TimeZoneInfo zone;
+            try { zone = TimeZoneInfo.FindSystemTimeZoneById(timezone ?? "UTC"); }
+            catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException) { return Results.BadRequest(new { error = "Invalid timezone." }); }
             var now = DateTime.UtcNow;
-            var overview = await queries.GetOverviewAsync(now, ct);
+            var localDay = TimeZoneInfo.ConvertTimeFromUtc(now, zone).Date;
+            var todayStart = TimeZoneInfo.ConvertTimeToUtc(localDay, zone);
+            var yesterdayStart = TimeZoneInfo.ConvertTimeToUtc(localDay.AddDays(-1), zone);
+            var tomorrowStart = TimeZoneInfo.ConvertTimeToUtc(localDay.AddDays(1), zone);
+            var overview = await queries.GetOverviewAsync(now, ct, todayStart, yesterdayStart);
             static object Metrics(OperationsMetrics value) => new { attempts = value.Attempts, failedRequests = value.FailedRequests, networkFailures = value.NetworkFailures, averageLatencyMs = value.AverageLatencyMs };
             return Results.Ok(new
             {
-                generatedAt = now, timezone = "UTC", windows = new { recentMinute = new { from = now.AddMinutes(-1), to = now }, previousMinute = new { from = now.AddMinutes(-2), to = now.AddMinutes(-1) }, today = new { from = now.Date, to = now }, yesterday = new { from = now.Date.AddDays(-1), to = now.Date }, traffic = new { from = now.Date, to = now.Date.AddDays(1), bucket = "1h" }, statusErrors = new { from = now.AddHours(-1), to = now }, recentEndpoints = new { from = now.AddMinutes(-5), to = now }, groups = new { from = now.AddHours(-1), to = now }, groupsHourly = new { from = now.AddHours(-1), to = now, bucket = "1m" } },
+                generatedAt = now, timezone = zone.Id, windows = new { recentMinute = new { from = now.AddMinutes(-1), to = now }, previousMinute = new { from = now.AddMinutes(-2), to = now.AddMinutes(-1) }, today = new { from = todayStart, to = now }, yesterday = new { from = yesterdayStart, to = todayStart }, traffic = new { from = todayStart, to = tomorrowStart, bucket = "1h" }, statusErrors = new { from = now.AddHours(-1), to = now }, recentEndpoints = new { from = now.AddMinutes(-5), to = now }, groups = new { from = now.AddHours(-1), to = now }, groupsHourly = new { from = now.AddHours(-1), to = now, bucket = "1m" } },
                 requests = new { currentMinute = Metrics(overview.CurrentMinute), previousMinute = Metrics(overview.PreviousMinute), today = Metrics(overview.Today), yesterday = Metrics(overview.Yesterday) },
                 traffic = overview.Traffic.Select(item => new { from = item.From, to = item.To, attempts = item.Attempts }),
                 statusErrors = overview.StatusErrors.Select(item => new { status = item.Status, attempts = item.Attempts }), networkFailuresLastHour = overview.LastHour.NetworkFailures,
@@ -307,7 +314,7 @@ public static partial class ManagementEndpoints
                 PathPattern = req.PathPattern,
                 Destination = req.Destination,
                 RemovePrefix = req.RemovePrefix,
-                RequiresAuth = req.RequiresAuth,
+
                 RateLimitPerMinute = req.RateLimitPerMinute,
                 BlockedIpRanges = req.BlockedIpRanges,
                 AllowedIpRanges = req.AllowedIpRanges,
@@ -342,7 +349,7 @@ public static partial class ManagementEndpoints
             if (req.PathPattern != null) ep.PathPattern = req.PathPattern;
             if (req.Destination != null) ep.Destination = req.Destination;
             if (req.RemovePrefix != null) ep.RemovePrefix = req.RemovePrefix;
-            if (req.RequiresAuth.HasValue) ep.RequiresAuth = req.RequiresAuth.Value;
+
             if (req.IsEnabled.HasValue) ep.IsEnabled = req.IsEnabled.Value;
             // Same partial-update contract as groups: null = leave unchanged;
             // empty string (or zero for the rate limit) = clear the policy.
@@ -437,13 +444,13 @@ public record UpdateGroupRequest(
     string? AllowedIpRanges = null);
 public record CreateEndpointRequest(
     Guid GroupId, string Name, string PathPattern, string Destination,
-    string? RemovePrefix, bool RequiresAuth = false,
+    string? RemovePrefix,
     int? RateLimitPerMinute = null,
     string? BlockedIpRanges = null,
     string? AllowedIpRanges = null);
 public record UpdateEndpointRequest(
     string? Name, string? PathPattern, string? Destination,
-    string? RemovePrefix, bool? RequiresAuth, bool? IsEnabled,
+    string? RemovePrefix, bool? IsEnabled,
     int? RateLimitPerMinute = null,
     string? BlockedIpRanges = null,
     string? AllowedIpRanges = null);

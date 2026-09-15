@@ -21,13 +21,13 @@ try {
   assert.doesNotMatch(markup, /Network failures \(no HTTP status\)/)
   // Exactly one Endpoint Groups panel (no silent duplication).
   assert.equal(markup.match(/>Endpoint Groups</g)?.length, 1)
-  // Traffic panel keeps its calendar-day domain: UTC title, UTC-labelled axis, fixed 00:00→24:00 hour ticks.
-  assert.match(markup, /Traffic — Today \(UTC\)/)
-  assert.match(markup, /times shown in UTC/)
+  // Traffic uses browser-local calendar boundaries and labels.
+  assert.ok(markup.includes(`Traffic — Today (${Intl.DateTimeFormat().resolvedOptions().timeZone})`))
+  assert.match(markup, /times shown in the browser time zone/)
   assert.match(markup, /<text[^>]*>06:00<\/text>/)
   assert.match(markup, /<text[^>]*>12:00<\/text>/)
   assert.match(markup, /<text[^>]*>18:00<\/text>/)
-  assert.match(markup, /UTC windows/)
+  assert.doesNotMatch(markup, /UTC windows/)
   // Data-driven, not demo/static: with no fetched data the cards show em-dash placeholders and the loading status,
   // never fabricated sample figures or mock content.
   assert.match(markup, /Loading operations overview…/)

@@ -20,7 +20,7 @@ function buildFullPayload(ep, overrides) {
     pathPattern:        ep.pathPattern,
     destination:        ep.destination,
     removePrefix:       ep.removePrefix ?? null,
-    requiresAuth:       ep.requiresAuth ?? false,
+
     isEnabled:          ep.isEnabled ?? true,
     rateLimitPerMinute: ep.rateLimitPerMinute ?? null,
     blockedIpRanges:    ep.blockedIpRanges ?? null,
@@ -40,7 +40,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
     pathPattern:  initial?.pathPattern  ?? "",
     destination:  initial?.destination  ?? "",
     removePrefix: initial?.removePrefix ?? "",
-    requiresAuth: initial?.requiresAuth ?? false,
+
     isEnabled:    initial?.isEnabled    ?? true,
   })
   const [saving, setSaving] = useState(false)
@@ -68,7 +68,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             pathPattern:  form.pathPattern.trim(),
             destination:  form.destination.trim(),
             removePrefix: form.removePrefix.trim(),
-            requiresAuth: form.requiresAuth,
+
             isEnabled:    form.isEnabled,
           })
         : {
@@ -77,7 +77,7 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             pathPattern:  form.pathPattern.trim(),
             destination:  form.destination.trim(),
             removePrefix: form.removePrefix.trim(),
-            requiresAuth: form.requiresAuth,
+
           }
       const res = await fetch(url, {
         method,
@@ -209,28 +209,10 @@ function EndpointModal({ initial, groups, onClose, onSaved }) {
             />
           </div>
 
-          {/* Downstream Auth (metadata) */}
+
           <p className="text-xs text-muted-foreground">Leave empty to strip only the Group Path. An override replaces that default; it is matched against the full incoming path, not the path after the group. Use /9r/v1 to strip both /9r and /v1.</p>
           <div className="route-preview" aria-live="polite"><strong>Request URL template</strong><code>{preview.incoming}</code><strong>Forwarded to upstream</strong><code>{preview.upstream}</code><p>Removes {preview.prefix}. Parameters are shown as templates; this preview does not send a request. {!preview.matches && "This prefix does not match: the incoming path will be retained."}</p></div>
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <span className="relative">
-              <input
-                id="endpoint-requires-auth"
-                name="requiresAuth"
-                type="checkbox"
-                className="sr-only peer"
-                checked={form.requiresAuth}
-                onChange={e => set("requiresAuth", e.target.checked)}
-                aria-label="Service Requires Auth (metadata)"
-              />
-              <div className={`h-5 w-9 rounded-md transition-colors ${form.requiresAuth ? "bg-primary/30" : "bg-muted"}`} />
-              <div className={`absolute top-[3px] h-3.5 w-3.5 rounded-sm shadow transition-all ${
-                form.requiresAuth ? "left-[18px] bg-primary" : "left-[3px] bg-muted-foreground"
-              }`} />
-            </span>
-            <span className="text-sm">Service Requires Auth</span>
-            <span className="text-xs text-muted-foreground">(downstream metadata — gateway always forwards auth headers)</span>
-          </label>
+
 
           {err && (
             <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2">
@@ -696,7 +678,7 @@ export default function EndpointsTab() {
                   <TableHead>Path Pattern</TableHead>
                   <TableHead>Destination</TableHead>
                   <TableHead>Remove Prefix</TableHead>
-                  <TableHead className="text-center">Svc Auth</TableHead>
+
                   <TableHead className="text-center">Policy</TableHead>
                   <TableHead className="text-center">Enabled</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -705,7 +687,7 @@ export default function EndpointsTab() {
               <TableBody>
                 {epList.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-12 text-muted-foreground text-xs">
+                    <TableCell colSpan={8} className="text-center py-12 text-muted-foreground text-xs">
                       {search || selectedGroupId !== "all" ? "No endpoints match these filters." : "No endpoints yet. Add an endpoint to connect a service."}
                     </TableCell>
                   </TableRow>
@@ -743,17 +725,7 @@ export default function EndpointsTab() {
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {ep.removePrefix || <span className="text-muted-foreground/40">—</span>}
                     </TableCell>
-                    <TableCell className="text-center">
-                      {ep.requiresAuth ? (
-                        <Badge variant="outline" className="text-[10px] gap-1 text-amber-400 border-amber-400/40">
-                          Svc Auth
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground">
-                          Svc Open
-                        </Badge>
-                      )}
-                    </TableCell>
+
                     {/* Compact policy badges — clickable to edit */}
                     <TableCell className="text-center">
                       <div className="flex flex-wrap gap-1 justify-center">
