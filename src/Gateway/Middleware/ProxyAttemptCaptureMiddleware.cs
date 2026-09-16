@@ -44,6 +44,7 @@ public sealed class ProxyAttemptCaptureMiddleware
                 : forwarder?.Error is { } error && error != ForwarderError.None ? "network_failure"
                 : rejected ? "gateway_rejected"
                 : forwarded ? "upstream_response" : "gateway_failure";
+            var clientIp = context.Connection.RemoteIpAddress?.ToString();
             try { sink.TryEnqueue(new ProxyRequestEvent
                 {
                     Id = Guid.NewGuid(), OccurredAt = started, CompletedAt = DateTime.UtcNow,
@@ -51,7 +52,8 @@ public sealed class ProxyAttemptCaptureMiddleware
                     Method = context.Request.Method, RequestPath = requestPath, EndpointId = endpointId, GroupId = groupId,
                     EndpointName = metadata.GetValueOrDefault("gateway.endpoint_name") ?? "", GroupName = metadata.GetValueOrDefault("gateway.group_name") ?? "",
                     ConfiguredDestination = metadata.GetValueOrDefault("gateway.configured_destination") ?? "", Outcome = outcome,
-                    ResponseStatus = outcome is "client_disconnected" or "network_failure" or "gateway_failure" ? null : responseStatus
+                    ResponseStatus = outcome is "client_disconnected" or "network_failure" or "gateway_failure" ? null : responseStatus,
+                    ClientIp = clientIp
                 }); }
             catch { }
         }

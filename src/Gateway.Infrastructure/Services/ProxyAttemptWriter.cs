@@ -115,8 +115,8 @@ public sealed class ProxyAttemptWriter : BackgroundService, IProxyAttemptSink
     }
 
     private static Task InsertBatchAsync(GatewayDbContext db, List<ProxyRequestEvent> batch, CancellationToken ct) => db.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "ProxyRequestEvents" ("Id", "OccurredAt", "CompletedAt", "DurationMs", "Method", "RequestPath", "EndpointId", "GroupId", "EndpointName", "GroupName", "ConfiguredDestination", "Outcome", "ResponseStatus")
-        SELECT * FROM unnest(@ids, @occurredAt, @completedAt, @durationMs, @methods, @requestPaths, @endpointIds, @groupIds, @endpointNames, @groupNames, @destinations, @outcomes, @responseStatuses)
+        INSERT INTO "ProxyRequestEvents" ("Id", "OccurredAt", "CompletedAt", "DurationMs", "Method", "RequestPath", "EndpointId", "GroupId", "EndpointName", "GroupName", "ConfiguredDestination", "Outcome", "ResponseStatus", "ClientIp")
+        SELECT * FROM unnest(@ids, @occurredAt, @completedAt, @durationMs, @methods, @requestPaths, @endpointIds, @groupIds, @endpointNames, @groupNames, @destinations, @outcomes, @responseStatuses, @clientIps)
         ON CONFLICT ("Id") DO NOTHING
         """, new object[]
         {
@@ -126,7 +126,8 @@ public sealed class ProxyAttemptWriter : BackgroundService, IProxyAttemptSink
             ArrayParameter("endpointIds", NpgsqlDbType.Uuid, batch.Select(x => x.EndpointId).ToArray()), ArrayParameter("groupIds", NpgsqlDbType.Uuid, batch.Select(x => x.GroupId).ToArray()),
             ArrayParameter("endpointNames", NpgsqlDbType.Varchar, batch.Select(x => x.EndpointName).ToArray()), ArrayParameter("groupNames", NpgsqlDbType.Varchar, batch.Select(x => x.GroupName).ToArray()),
             ArrayParameter("destinations", NpgsqlDbType.Varchar, batch.Select(x => x.ConfiguredDestination).ToArray()), ArrayParameter("outcomes", NpgsqlDbType.Varchar, batch.Select(x => x.Outcome).ToArray()),
-            ArrayParameter("responseStatuses", NpgsqlDbType.Integer, batch.Select(x => x.ResponseStatus).ToArray())
+            ArrayParameter("responseStatuses", NpgsqlDbType.Integer, batch.Select(x => x.ResponseStatus).ToArray()),
+            ArrayParameter("clientIps", NpgsqlDbType.Varchar, batch.Select(x => x.ClientIp).ToArray())
         }, ct);
 
     private static NpgsqlParameter ArrayParameter(string name, NpgsqlDbType type, Array values) => new(name, type | NpgsqlDbType.Array) { Value = values };

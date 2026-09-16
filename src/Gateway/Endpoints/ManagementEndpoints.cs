@@ -460,7 +460,7 @@ public record CursorState(OperationsFilter Filter, DateTime LastOccurredAt, Guid
 
 public static partial class ManagementEndpoints
 {
-    private static object EventDto(ProxyRequestEvent item) => new { id = item.Id, occurredAt = item.OccurredAt, completedAt = item.CompletedAt, durationMs = item.DurationMs, method = item.Method, requestPath = item.RequestPath, group = new { id = item.GroupId, name = item.GroupName }, endpoint = new { id = item.EndpointId, name = item.EndpointName }, configuredDestination = item.ConfiguredDestination, outcome = item.Outcome, responseStatus = item.ResponseStatus };
+    private static object EventDto(ProxyRequestEvent item) => new { id = item.Id, occurredAt = item.OccurredAt, completedAt = item.CompletedAt, durationMs = item.DurationMs, method = item.Method, requestPath = item.RequestPath, group = new { id = item.GroupId, name = item.GroupName }, endpoint = new { id = item.EndpointId, name = item.EndpointName }, configuredDestination = item.ConfiguredDestination, outcome = item.Outcome, responseStatus = item.ResponseStatus, clientIp = item.ClientIp };
     private static string SafeDestination(string destination) => Uri.TryCreate(destination, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority) : "invalid";
     private static object MetricsDto(OperationsMetrics metrics) => new { attempts = metrics.Attempts, failedRequests = metrics.FailedRequests, gatewayRejected = metrics.GatewayRejected, networkFailures = metrics.NetworkFailures, clientDisconnected = metrics.ClientDisconnected, upstream4xx = metrics.Upstream4xx, upstream5xx = metrics.Upstream5xx, latency = metrics.AverageLatencyMs is null ? null : new { averageMs = metrics.AverageLatencyMs, p95Ms = metrics.P95LatencyMs } };
 }

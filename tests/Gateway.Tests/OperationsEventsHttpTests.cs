@@ -140,6 +140,66 @@ public sealed class OperationsEventsHttpTests : IDisposable
     }
 
     [Fact]
+    public async Task EventsApi_ExposesClientIp_ForIPv4IPv6AndNull()
+    {
+        var endpoint = Guid.NewGuid();
+        var group = Guid.NewGuid();
+        var at = DateTime.UtcNow.AddMinutes(-5);
+        await using (var db = CreateDb())
+        {
+            await db.Database.MigrateAsync();
+            db.ProxyRequestEvents.AddRange(
+                Event(at, endpoint, group, "ip4", "upstream_response", 200, "203.0.113.42"),
+                Event(at.AddSeconds(-1), endpoint, group, "ip6", "upstream_response", 200, "2001:db8::ff"),
+                Event(at.AddSeconds(-2), endpoint, group, "noip", "upstream_response", 200, null));
+            await db.SaveChangesAsync();
+        }
+
+        var from = Uri.EscapeDataString(at.AddMinutes(-1).ToString("O"));
+        var to = Uri.EscapeDataString(at.AddMinutes(1).ToString("O"));
+        var json = await JsonAsync($"/api/management/operations/events?from={from}&to={to}&endpointId={endpoint}");
+        var items = json.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(3, items.Count);
+
+        var ipv4Item = items.First(item => item.GetProperty("clientIp").GetString() == "203.0.113.42");
+        Assert.Equal("203.0.113.42", ipv4Item.GetProperty("clientIp").GetString());
+
+        var ipv6Item = items.First(item => item.GetProperty("clientIp").GetString() == "2001:db8::ff");
+        Assert.Equal("2001:db8::ff", ipv6Item.GetProperty("clientIp").GetString());
+
+        var nullItem = items.First(item => item.GetProperty("clientIp").ValueKind == JsonValueKind.Null);
+        Assert.Equal("noip", nullItem.GetProperty("endpoint").GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task ProxiedRoute_CapturesLoopbackClientIp()
+    {
+        await using var upstream = await StartUpstreamAsync();
+        var destination = upstream.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        var slug = "ipcap" + Guid.NewGuid().ToString("N")[..10];
+        var group = await CreateAsync("/api/management/groups", new { name = slug, path = slug });
+        var groupId = group.GetProperty("id").GetString()!;
+        var endpoint = await CreateAsync("/api/management/endpoints", new { groupId, name = "ipcap", pathPattern = "/ip/{**catch-all}", destination, requiresAuth = false });
+        var endpointId = endpoint.GetProperty("id").GetString()!;
+
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/{slug}/ip/test")).StatusCode);
+
+        for (var attempts = 0; attempts < 100; attempts++)
+        {
+            await Task.Delay(50);
+            await using var db = CreateDb();
+            var captured = await db.ProxyRequestEvents.Where(item => item.EndpointId == Guid.Parse(endpointId)).ToListAsync();
+            if (captured.Count >= 1)
+            {
+                Assert.NotNull(captured[0].ClientIp);
+                Assert.Equal(IPAddress.Loopback.ToString(), captured[0].ClientIp);
+                return;
+            }
+        }
+        throw new Xunit.Sdk.XunitException("Timed out waiting for captured event with client IP");
+    }
+
+    [Fact]
     public async Task CatchAllRoute_CapturesSafeOriginalPathsAndKeepsRecentEndpointsSeparate()
     {
         await using var upstream = await StartUpstreamAsync();
@@ -195,10 +255,10 @@ public sealed class OperationsEventsHttpTests : IDisposable
 
     private GatewayDbContext CreateDb() => new(new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(_database.ConnectionString).Options);
 
-    private static ProxyRequestEvent Event(DateTime occurredAt, Guid endpoint, Guid group, string name, string outcome, int? status) => new()
+    private static ProxyRequestEvent Event(DateTime occurredAt, Guid endpoint, Guid group, string name, string outcome, int? status, string? clientIp = null) => new()
     {
         Id = Guid.NewGuid(), OccurredAt = occurredAt, CompletedAt = occurredAt, DurationMs = 10, Method = "GET", RequestPath = "/safe/{**path}", EndpointId = endpoint, GroupId = group,
-        EndpointName = name, GroupName = "group", ConfiguredDestination = "http://backend", Outcome = outcome, ResponseStatus = status
+        EndpointName = name, GroupName = "group", ConfiguredDestination = "http://backend", Outcome = outcome, ResponseStatus = status, ClientIp = clientIp
     };
 
     private async Task<JsonElement> JsonAsync(string url)

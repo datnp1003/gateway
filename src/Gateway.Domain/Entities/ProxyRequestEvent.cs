@@ -15,4 +15,5 @@ public class ProxyRequestEvent
     public string ConfiguredDestination { get; set; } = string.Empty;
     public string Outcome { get; set; } = string.Empty;
     public int? ResponseStatus { get; set; }
+    public string? ClientIp { get; set; }
 }

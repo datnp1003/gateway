@@ -43,6 +43,7 @@ public class GatewayDbContext : DbContext
             e.Property(x => x.GroupName).HasMaxLength(200);
             e.Property(x => x.ConfiguredDestination).HasMaxLength(512);
             e.Property(x => x.Outcome).HasMaxLength(32);
+            e.Property(x => x.ClientIp).HasMaxLength(45);
             e.HasIndex(x => new { x.OccurredAt, x.Id });
             e.HasIndex(x => new { x.EndpointId, x.OccurredAt, x.Id });
             e.HasIndex(x => new { x.GroupId, x.OccurredAt, x.Id });
