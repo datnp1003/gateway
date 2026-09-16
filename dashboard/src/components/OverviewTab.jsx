@@ -42,7 +42,7 @@ export default function OverviewTab({ onOpenLogs }) {
 
     <div className="metric-grid">
       <MetricCard Icon={Activity} label="Requests / min" value={number(current?.attempts)} comparison={current ? difference(current.attempts, previous?.attempts) : "Recent UTC minute"} />
-      <MetricCard Icon={Activity} label="Total Today" value={number(today?.attempts)} comparison={today ? difference(today.attempts, yesterday?.attempts).replace("vs prior", "vs yesterday") : "Since local midnight"} />
+      <MetricCard Icon={Activity} label="Total Today" value={number(today?.attempts)} comparison={today ? "Yesterday: " + number(yesterday?.attempts) : "Since local midnight"} />
       <MetricCard Icon={TriangleAlert} label="Error Rate" value={current ? percent(current.failedRequests, current.attempts) : "—"} comparison={current ? difference(current.failedRequests * 100 / Math.max(current.attempts, 1), previous ? previous.failedRequests * 100 / Math.max(previous.attempts, 1) : null, " pp") : "Recent UTC minute"} />
       <MetricCard Icon={Clock3} label="Avg Latency" value={seconds(current?.averageLatencyMs)} comparison="Completed attempts with duration" />
     </div>
