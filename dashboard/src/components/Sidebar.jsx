@@ -1,11 +1,10 @@
-import { LayoutDashboard, Route, FolderTree, Link2, Server, ScrollText } from "lucide-react"
+import { LayoutDashboard, Route, FolderTree, Link2, ScrollText } from "lucide-react"
 
 const items = {
   Overview: [LayoutDashboard, "Overview"],
   Groups: [FolderTree, "Groups"],
   "API Routes": [Link2, "Endpoints"],
   Routes: [Route, "Active routes"],
-  "Backend Targets": [Server, "Backend targets"],
   Logs: [ScrollText, "Logs"],
 }
 

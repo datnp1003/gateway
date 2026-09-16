@@ -5,14 +5,13 @@ import OverviewTab from "./components/OverviewTab"
 import RoutesTab from "./components/RoutesTab"
 import GroupsTab from "./components/GroupsTab"
 import EndpointsTab from "./components/EndpointsTab"
-import ClustersTab from "./components/ClustersTab"
 import LogsTab from "./components/LogsTab"
 import LoginScreen from "./components/LoginScreen"
 import { Toaster } from "./components/ui/Toaster"
 import useAuth from "./hooks/useAuth"
 
-const tabs = ["Overview", "Routes", "Groups", "API Routes", "Backend Targets", "Logs"]
-const pageTitles = { "API Routes": "Endpoints", Routes: "Active routes", "Backend Targets": "Backend targets" }
+const tabs = ["Overview", "Routes", "Groups", "API Routes", "Logs"]
+const pageTitles = { "API Routes": "Endpoints", Routes: "Active routes" }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("Overview")
@@ -63,7 +62,6 @@ export default function App() {
           {activeTab === "Routes"          && <RoutesTab />}
           {activeTab === "Groups"          && <GroupsTab />}
           {activeTab === "API Routes"      && <EndpointsTab />}
-          {activeTab === "Backend Targets" && <ClustersTab />}
           {activeTab === "Logs"            && <LogsTab navigation={logNavigation} />}
         </main>
       </div>
