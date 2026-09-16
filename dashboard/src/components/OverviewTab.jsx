@@ -1,4 +1,4 @@
-import { Activity, Clock3, RefreshCw, TriangleAlert } from "lucide-react"
+import { Activity, Clock3, Network, RefreshCw, TriangleAlert } from "lucide-react"
 import { useFetchWithRefetch } from "../hooks/useFetch"
 import { Button } from "./ui/Button"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card"
@@ -11,8 +11,8 @@ const percent = (failed, attempts) => attempts ? `${(failed * 100 / attempts).to
 const difference = (current, previous, suffix = "") => previous == null ? "No prior window" : `${current >= previous ? "▲" : "▼"} ${Math.abs(current - previous).toLocaleString()}${suffix} vs prior`
 const endpointStatus = endpoint => endpoint.latestOutcome === "network_failure" || endpoint.latestOutcome === "gateway_failure" || endpoint.latestResponseStatus >= 500 ? "err" : endpoint.latestResponseStatus >= 400 || endpoint.latestOutcome === "gateway_rejected" ? "warn" : "ok"
 
-function MetricCard({ Icon, label, value, comparison }) {
-  return <Card className="metric-card"><CardContent className="p-5"><div className="metric-card__label"><Icon aria-hidden="true" />{label}</div><p className="metric-card__value">{value}</p><p className="text-xs text-muted-foreground">{comparison}</p></CardContent></Card>
+function MetricCard({ Icon, label, value, comparison, tooltip }) {
+  return <Card className="metric-card" title={tooltip}><CardContent className="p-5"><div className="metric-card__label"><Icon aria-hidden="true" />{label}</div><p className="metric-card__value">{value}</p><p className="text-xs text-muted-foreground">{comparison}</p></CardContent></Card>
 }
 
 export default function OverviewTab({ onOpenLogs }) {
@@ -41,14 +41,14 @@ export default function OverviewTab({ onOpenLogs }) {
     {overview.loading && <p role="status">Loading operations overview…</p>}
 
     <div className="metric-grid">
-      <MetricCard Icon={Activity} label="Requests / min" value={number(current?.attempts)} comparison={current ? difference(current.attempts, previous?.attempts) : "Recent UTC minute"} />
+      <MetricCard Icon={Network} label="Unique IPs Today" value={number(today?.uniqueClients)} comparison={today ? "Yesterday: " + number(yesterday?.uniqueClients) : "Since local midnight"} tooltip="Only events with a recorded client IP are counted; legacy unknown excluded." />
       <MetricCard Icon={Activity} label="Total Today" value={number(today?.attempts)} comparison={today ? "Yesterday: " + number(yesterday?.attempts) : "Since local midnight"} />
       <MetricCard Icon={TriangleAlert} label="Error Rate" value={current ? percent(current.failedRequests, current.attempts) : "—"} comparison={current ? difference(current.failedRequests * 100 / Math.max(current.attempts, 1), previous ? previous.failedRequests * 100 / Math.max(previous.attempts, 1) : null, " pp") : "Recent UTC minute"} />
       <MetricCard Icon={Clock3} label="Avg Latency" value={seconds(current?.averageLatencyMs)} comparison="Completed attempts with duration" />
     </div>
 
     <div className="overview-pair">
-      <MetricsChart title={`Traffic — Today (${timezone})`} samples={data?.traffic} series={[["attempts", "Requests", "#2563eb"]]} unit="req" domain={trafficDomain} showLegend={false} />
+      <MetricsChart title={`Traffic — Today (${timezone})`} samples={data?.traffic} series={[["attempts", "Requests", "#2563eb", "req"], ["uniqueClients", "Unique IPs", "#16a34a", "IPs"]]} unit="count" domain={trafficDomain} />
       <Card><CardHeader><CardTitle>Endpoint Groups</CardTitle></CardHeader><CardContent className="group-list">
         {data && !data.groups.length && <p className="text-sm text-muted-foreground">No observed group traffic in this window.</p>}
         {data?.groups?.map(group => <div key={group.groupId} className="group-row"><div><button className="dashboard-link" onClick={() => onOpenLogs({ groupId: group.groupId })}>{group.groupName}</button><code>{number(group.observedEndpoints)} observed endpoint{group.observedEndpoints === 1 ? "" : "s"}</code></div><Sparkline buckets={group.hourly} domain={groupsDomain} label={`${group.groupName} — last hour`} /><span>{number(group.requestsPerMinute)} req/min<br />{group.measuredSuccessPercent == null ? "—" : `${group.measuredSuccessPercent.toFixed(2)}% upstream <400`}</span></div>)}

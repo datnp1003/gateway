@@ -8,7 +8,7 @@ try {
   const { default: OverviewTab } = await server.ssrLoadModule("/src/components/OverviewTab.jsx")
   const markup = renderToStaticMarkup(React.createElement(OverviewTab, { onOpenLogs: () => {} }))
   // Real API-backed information architecture: four metric cards + four sections.
-  assert.match(markup, /Requests \/ min/)
+  assert.match(markup, /Unique IPs Today/)
   assert.match(markup, /Total Today/)
   assert.match(markup, /Error Rate/)
   assert.match(markup, /Avg Latency/)
@@ -40,7 +40,17 @@ try {
   assert.match(chart, /p95 0\.077 s/)
   assert.match(chart, /0\.077 s/)
   assert.doesNotMatch(chart, / ms/)
-  console.log("PASS: 24/24 overviewTab assertions — Endpoint Groups relocated beside Traffic, no Error Breakdown / no duplicate, Traffic calendar-day domain, no demo/static content, seconds chart precision")
+  // Unique IPs Today card: uses Network icon, shows today's uniqueClients, subtitle shows yesterday's absolute count.
+  assert.match(markup, /Unique IPs Today/)
+  assert.doesNotMatch(markup, /Requests \/ min/)
+  // Unique IPs card has a title tooltip about recorded-IP-only counting.
+  assert.match(markup, /Only events with a recorded client IP are counted/)
+  // Traffic chart legend uses per-series units: Requests (req), Unique IPs (IPs).
+  assert.match(markup, /Requests \(req\)/)
+  assert.match(markup, /Unique IPs \(IPs\)/)
+  // Unique IPs must never appear with unit "req".
+  assert.doesNotMatch(markup, /Unique IPs \(req\)/)
+  console.log("PASS: 30/30 overviewTab assertions — Unique IPs Today replaces Requests/min, tooltip, per-series units, Endpoint Groups relocated beside Traffic, no Error Breakdown / no duplicate, Traffic calendar-day domain, no demo/static content, seconds chart precision")
 } finally {
   await server.close()
 }

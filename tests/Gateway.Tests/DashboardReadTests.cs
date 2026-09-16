@@ -83,6 +83,9 @@ public class DashboardReadTests
         Assert.Equal(2, overview.CurrentMinute.Attempts);
         Assert.Equal(5, overview.Today.Attempts);
         Assert.Equal(1, overview.Yesterday.Attempts);
+        // Events have no ClientIp → unique clients is 0.
+        Assert.Equal(0, overview.Today.UniqueClients);
+        Assert.Equal(0, overview.Yesterday.UniqueClients);
         Assert.Equal(1, Assert.Single(overview.StatusErrors).Attempts);
         Assert.Equal(503, Assert.Single(overview.StatusErrors).Status);
         Assert.Equal(1, overview.LastHour.NetworkFailures);
@@ -142,6 +145,175 @@ public class DashboardReadTests
         Id = Guid.NewGuid(), OccurredAt = occurredAt, CompletedAt = occurredAt, Method = "GET", RequestPath = "/safe/{**path}", EndpointId = endpointId, GroupId = groupId,
         EndpointName = endpointName, GroupName = "group", ConfiguredDestination = "https://backend.example", Outcome = outcome, ResponseStatus = status, DurationMs = duration
     };
+
+    private static ProxyRequestEvent EventWithIp(DateTime occurredAt, Guid endpointId, Guid groupId, string endpointName, string outcome, int? status, double? duration, string? clientIp) => new()
+    {
+        Id = Guid.NewGuid(), OccurredAt = occurredAt, CompletedAt = occurredAt, Method = "GET", RequestPath = "/safe/{**path}", EndpointId = endpointId, GroupId = groupId,
+        EndpointName = endpointName, GroupName = "group", ConfiguredDestination = "https://backend.example", Outcome = outcome, ResponseStatus = status, DurationMs = duration, ClientIp = clientIp
+    };
+
+    [Fact]
+    public async Task Overview_UniqueIpsDeduplicatesWithinHourAndAcrossHours()
+    {
+        using var database = new TestDatabase();
+        var options = new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(database.ConnectionString).Options;
+        var group = Guid.NewGuid();
+        var endpoint = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc);
+        await using var db = new GatewayDbContext(options);
+        await db.Database.MigrateAsync();
+        // Same IP "10.0.0.1" makes 3 requests in the same hour → unique count = 1.
+        // IP "10.0.0.2" makes 1 request in a different hour → unique count = 2 for today.
+        db.ProxyRequestEvents.AddRange(
+            EventWithIp(now.AddSeconds(-20), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.AddSeconds(-10), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.AddMinutes(-3), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.AddHours(-2), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.2"));
+        await db.SaveChangesAsync();
+
+        var overview = await new ProxyOperationsQueryService(db).GetOverviewAsync(now, CancellationToken.None);
+
+        // Today: 2 distinct IPs across 4 requests.
+        Assert.Equal(2, overview.Today.UniqueClients);
+        // Per-bucket: the 12:00-12:30 bucket has 3 requests from same IP → uniqueClients=1.
+        var bucket1200 = overview.Traffic.Single(b => b.From == now.Date.AddHours(12));
+        Assert.Equal(1, bucket1200.UniqueClients);
+        // The 10:00-11:00 bucket has 1 request from a different IP → uniqueClients=1.
+        var bucket1000 = overview.Traffic.Single(b => b.From == now.Date.AddHours(10));
+        Assert.Equal(1, bucket1000.UniqueClients);
+        // Daily unique (2) == sum of hourly uniques (1+1=2) in this case.
+        Assert.Equal(overview.Today.UniqueClients, overview.Traffic.Sum(b => b.UniqueClients));
+    }
+
+    [Fact]
+    public async Task Overview_UniqueIpsExcludesNullAndEmpty()
+    {
+        using var database = new TestDatabase();
+        var options = new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(database.ConnectionString).Options;
+        var group = Guid.NewGuid();
+        var endpoint = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc);
+        await using var db = new GatewayDbContext(options);
+        await db.Database.MigrateAsync();
+        // Events with null and empty ClientIp are excluded from unique count.
+        db.ProxyRequestEvents.AddRange(
+            EventWithIp(now.AddSeconds(-20), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.AddSeconds(-10), endpoint, group, "orders", "upstream_response", 200, 10, null),
+            EventWithIp(now.AddSeconds(-5), endpoint, group, "orders", "upstream_response", 200, 10, ""),
+            EventWithIp(now.AddSeconds(-3), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.2"));
+        await db.SaveChangesAsync();
+
+        var overview = await new ProxyOperationsQueryService(db).GetOverviewAsync(now, CancellationToken.None);
+
+        // Only 2 distinct non-null non-empty IPs.
+        Assert.Equal(2, overview.Today.UniqueClients);
+        Assert.Equal(4, overview.Today.Attempts);
+    }
+
+    [Fact]
+    public async Task Overview_UniqueIpsDistinguishesIPv4AndIPv6()
+    {
+        using var database = new TestDatabase();
+        var options = new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(database.ConnectionString).Options;
+        var group = Guid.NewGuid();
+        var endpoint = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc);
+        await using var db = new GatewayDbContext(options);
+        await db.Database.MigrateAsync();
+        // "::ffff:10.0.0.1" and "10.0.0.1" are stored as distinct strings → counted separately.
+        // This is by design: the middleware captures RemoteIpAddress.ToString() as-is; no unsafe normalization.
+        db.ProxyRequestEvents.AddRange(
+            EventWithIp(now.AddSeconds(-20), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.AddSeconds(-10), endpoint, group, "orders", "upstream_response", 200, 10, "::ffff:10.0.0.1"),
+            EventWithIp(now.AddSeconds(-5), endpoint, group, "orders", "upstream_response", 200, 10, "2001:db8::1"));
+        await db.SaveChangesAsync();
+
+        var overview = await new ProxyOperationsQueryService(db).GetOverviewAsync(now, CancellationToken.None);
+
+        // Three distinct string values.
+        Assert.Equal(3, overview.Today.UniqueClients);
+    }
+
+    [Fact]
+    public async Task Overview_UniqueIpsYesterdayUsesCorrectLocalMidnight()
+    {
+        using var database = new TestDatabase();
+        var options = new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(database.ConnectionString).Options;
+        var group = Guid.NewGuid();
+        var endpoint = Guid.NewGuid();
+        // Now is 2026-09-08 12:30 UTC. Today midnight = 2026-09-08 00:00 UTC. Yesterday = 2026-09-07.
+        var now = new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc);
+        await using var db = new GatewayDbContext(options);
+        await db.Database.MigrateAsync();
+        db.ProxyRequestEvents.AddRange(
+            // Today: 2 distinct IPs.
+            EventWithIp(now.AddHours(-1), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.AddHours(-2), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.2"),
+            // Yesterday: 3 distinct IPs.
+            EventWithIp(now.Date.AddDays(-1).AddHours(1), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.Date.AddDays(-1).AddHours(2), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.3"),
+            EventWithIp(now.Date.AddDays(-1).AddHours(3), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.4"),
+            // Before yesterday: should not count.
+            EventWithIp(now.Date.AddDays(-2).AddHours(1), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.5"));
+        await db.SaveChangesAsync();
+
+        var overview = await new ProxyOperationsQueryService(db).GetOverviewAsync(now, CancellationToken.None);
+
+        Assert.Equal(2, overview.Today.UniqueClients);
+        Assert.Equal(3, overview.Yesterday.UniqueClients);
+    }
+
+    [Fact]
+    public async Task Overview_UniqueIpsDailyNotEqualToSumHourlyWhenSameIpSpansMultipleHours()
+    {
+        using var database = new TestDatabase();
+        var options = new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(database.ConnectionString).Options;
+        var group = Guid.NewGuid();
+        var endpoint = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc);
+        await using var db = new GatewayDbContext(options);
+        await db.Database.MigrateAsync();
+        // IP "10.0.0.1" appears in 3 different hourly buckets.
+        // Daily unique = 1. Sum of hourly uniques = 3.
+        db.ProxyRequestEvents.AddRange(
+            EventWithIp(now.Date.AddHours(2), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.Date.AddHours(6), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"),
+            EventWithIp(now.Date.AddHours(10), endpoint, group, "orders", "upstream_response", 200, 10, "10.0.0.1"));
+        await db.SaveChangesAsync();
+
+        var overview = await new ProxyOperationsQueryService(db).GetOverviewAsync(now, CancellationToken.None);
+
+        Assert.Equal(1, overview.Today.UniqueClients);
+        Assert.Equal(3, overview.Traffic.Sum(b => b.UniqueClients));
+        Assert.NotEqual(overview.Today.UniqueClients, overview.Traffic.Sum(b => b.UniqueClients));
+    }
+
+    [Fact]
+    public async Task Overview_ExistingSummaryRegression_UniqueClientsDefaultsToZero()
+    {
+        using var database = new TestDatabase();
+        var options = new DbContextOptionsBuilder<GatewayDbContext>().UseNpgsql(database.ConnectionString).Options;
+        var group = Guid.NewGuid();
+        var endpoint = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 8, 12, 30, 0, DateTimeKind.Utc);
+        await using var db = new GatewayDbContext(options);
+        await db.Database.MigrateAsync();
+        // Events with no ClientIp set (legacy/pre-migration data).
+        db.ProxyRequestEvents.AddRange(
+            Event(now.AddSeconds(-20), endpoint, group, "orders", "upstream_response", 200, 100),
+            Event(now.AddSeconds(-10), endpoint, group, "orders", "upstream_response", 503, 300));
+        await db.SaveChangesAsync();
+
+        var overview = await new ProxyOperationsQueryService(db).GetOverviewAsync(now, CancellationToken.None);
+
+        // Existing behavior preserved: attempts, error counts, etc.
+        Assert.Equal(2, overview.Today.Attempts);
+        Assert.Equal(1, overview.Today.FailedRequests);
+        // New field: zero when all ClientIp are null.
+        Assert.Equal(0, overview.Today.UniqueClients);
+        // Traffic series also has zero uniqueClients per bucket.
+        Assert.All(overview.Traffic, bucket => Assert.Equal(0, bucket.UniqueClients));
+    }
 
     [Fact]
     public void PagesAllRetainedFilesAndFiltersBeforePaging()

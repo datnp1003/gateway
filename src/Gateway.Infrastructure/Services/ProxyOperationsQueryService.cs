@@ -118,14 +118,15 @@ public sealed class ProxyOperationsQueryService
             SELECT count(*)::bigint, count(*) FILTER (WHERE "Outcome" IN ('gateway_rejected','network_failure','gateway_failure') OR ("Outcome" = 'upstream_response' AND "ResponseStatus" >= 400))::bigint,
                    count(*) FILTER (WHERE "Outcome" = 'gateway_rejected')::bigint, count(*) FILTER (WHERE "Outcome" = 'network_failure')::bigint,
                    count(*) FILTER (WHERE "Outcome" = 'client_disconnected')::bigint, count(*) FILTER (WHERE "Outcome" = 'upstream_response' AND "ResponseStatus" BETWEEN 400 AND 499)::bigint,
-                   count(*) FILTER (WHERE "Outcome" = 'upstream_response' AND "ResponseStatus" >= 500)::bigint, avg("DurationMs"), percentile_cont(0.95) WITHIN GROUP (ORDER BY "DurationMs")
+                   count(*) FILTER (WHERE "Outcome" = 'upstream_response' AND "ResponseStatus" >= 500)::bigint, avg("DurationMs"), percentile_cont(0.95) WITHIN GROUP (ORDER BY "DurationMs"),
+                   count(DISTINCT "ClientIp") FILTER (WHERE "ClientIp" IS NOT NULL AND "ClientIp" != '')::bigint
             FROM "ProxyRequestEvents" WHERE "OccurredAt" >= @start AND "OccurredAt" < @end
               AND (@groupId IS NULL OR "GroupId" = @groupId) AND (@endpointId IS NULL OR "EndpointId" = @endpointId)
             """;
         await using var command = await CreateCommandAsync(sql, start, end, groupId, endpointId, ct);
         await using var reader = await command.ExecuteReaderAsync(ct);
         await reader.ReadAsync(ct);
-        return new OperationsMetrics(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5), reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetDouble(7), reader.IsDBNull(8) ? null : reader.GetDouble(8));
+        return new OperationsMetrics(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5), reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetDouble(7), reader.IsDBNull(8) ? null : reader.GetDouble(8), reader.GetInt64(9));
     }
 
     private async Task<IReadOnlyList<OperationsSeriesBucket>> ReadSeriesAsync(DateTime start, DateTime end, TimeSpan bucket, Guid? groupId, Guid? endpointId, CancellationToken ct)
@@ -134,14 +135,15 @@ public sealed class ProxyOperationsQueryService
             WITH buckets AS (SELECT series."From", LEAST(series."From" + @bucket, @end) AS "To" FROM generate_series(@start, @end - interval '1 microsecond', @bucket) AS series("From"))
             SELECT buckets."From", buckets."To", count(events."Id")::bigint,
                    count(events."Id") FILTER (WHERE events."Outcome" IN ('gateway_rejected','network_failure','gateway_failure') OR (events."Outcome" = 'upstream_response' AND events."ResponseStatus" >= 400))::bigint,
-                   avg(events."DurationMs"), percentile_cont(0.95) WITHIN GROUP (ORDER BY events."DurationMs")
+                   avg(events."DurationMs"), percentile_cont(0.95) WITHIN GROUP (ORDER BY events."DurationMs"),
+                   count(DISTINCT events."ClientIp") FILTER (WHERE events."ClientIp" IS NOT NULL AND events."ClientIp" != '')::bigint
             FROM buckets LEFT JOIN "ProxyRequestEvents" events ON events."OccurredAt" >= buckets."From" AND events."OccurredAt" < buckets."To" AND (@groupId IS NULL OR events."GroupId" = @groupId) AND (@endpointId IS NULL OR events."EndpointId" = @endpointId)
             GROUP BY buckets."From", buckets."To" ORDER BY buckets."From"
             """;
         var result = new List<OperationsSeriesBucket>();
         await using var command = await CreateCommandAsync(sql, start, end, groupId, endpointId, ct, bucket);
         await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) result.Add(new OperationsSeriesBucket(reader.GetDateTime(0), reader.GetDateTime(1), reader.GetInt64(2), reader.GetInt64(3), reader.IsDBNull(4) ? null : reader.GetDouble(4), reader.IsDBNull(5) ? null : reader.GetDouble(5)));
+        while (await reader.ReadAsync(ct)) result.Add(new OperationsSeriesBucket(reader.GetDateTime(0), reader.GetDateTime(1), reader.GetInt64(2), reader.GetInt64(3), reader.IsDBNull(4) ? null : reader.GetDouble(4), reader.IsDBNull(5) ? null : reader.GetDouble(5), reader.GetInt64(6)));
         return result;
     }
 
@@ -183,8 +185,8 @@ public sealed class ProxyOperationsQueryService
     }
 }
 
-public sealed record OperationsMetrics(long Attempts, long FailedRequests, long GatewayRejected, long NetworkFailures, long ClientDisconnected, long Upstream4xx, long Upstream5xx, double? AverageLatencyMs, double? P95LatencyMs);
-public sealed record OperationsSeriesBucket(DateTime From, DateTime To, long Attempts, long FailedRequests, double? AverageLatencyMs, double? P95LatencyMs);
+public sealed record OperationsMetrics(long Attempts, long FailedRequests, long GatewayRejected, long NetworkFailures, long ClientDisconnected, long Upstream4xx, long Upstream5xx, double? AverageLatencyMs, double? P95LatencyMs, long UniqueClients = 0);
+public sealed record OperationsSeriesBucket(DateTime From, DateTime To, long Attempts, long FailedRequests, double? AverageLatencyMs, double? P95LatencyMs, long UniqueClients = 0);
 public sealed record OperationsRanking(Guid EndpointId, string EndpointName, long Attempts, long FailedRequests, double? P95LatencyMs);
 public sealed record OperationsSummary(OperationsMetrics Current, OperationsMetrics? Previous, IReadOnlyList<OperationsSeriesBucket> Series, IReadOnlyList<OperationsRanking> Rankings, DateTime? ObservedEarliestEventAt);
 public sealed record OperationsStatusCount(int Status, long Attempts);

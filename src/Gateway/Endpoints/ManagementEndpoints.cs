@@ -136,12 +136,12 @@ public static partial class ManagementEndpoints
             var yesterdayStart = TimeZoneInfo.ConvertTimeToUtc(localDay.AddDays(-1), zone);
             var tomorrowStart = TimeZoneInfo.ConvertTimeToUtc(localDay.AddDays(1), zone);
             var overview = await queries.GetOverviewAsync(now, ct, todayStart, yesterdayStart);
-            static object Metrics(OperationsMetrics value) => new { attempts = value.Attempts, failedRequests = value.FailedRequests, networkFailures = value.NetworkFailures, averageLatencyMs = value.AverageLatencyMs };
+            static object Metrics(OperationsMetrics value) => new { attempts = value.Attempts, failedRequests = value.FailedRequests, networkFailures = value.NetworkFailures, averageLatencyMs = value.AverageLatencyMs, uniqueClients = value.UniqueClients };
             return Results.Ok(new
             {
                 generatedAt = now, timezone = zone.Id, windows = new { recentMinute = new { from = now.AddMinutes(-1), to = now }, previousMinute = new { from = now.AddMinutes(-2), to = now.AddMinutes(-1) }, today = new { from = todayStart, to = now }, yesterday = new { from = yesterdayStart, to = todayStart }, traffic = new { from = todayStart, to = tomorrowStart, bucket = "1h" }, statusErrors = new { from = now.AddHours(-1), to = now }, recentEndpoints = new { from = now.AddMinutes(-5), to = now }, groups = new { from = now.AddHours(-1), to = now }, groupsHourly = new { from = now.AddHours(-1), to = now, bucket = "1m" } },
                 requests = new { currentMinute = Metrics(overview.CurrentMinute), previousMinute = Metrics(overview.PreviousMinute), today = Metrics(overview.Today), yesterday = Metrics(overview.Yesterday) },
-                traffic = overview.Traffic.Select(item => new { from = item.From, to = item.To, attempts = item.Attempts }),
+                traffic = overview.Traffic.Select(item => new { from = item.From, to = item.To, attempts = item.Attempts, uniqueClients = item.UniqueClients }),
                 statusErrors = overview.StatusErrors.Select(item => new { status = item.Status, attempts = item.Attempts }), networkFailuresLastHour = overview.LastHour.NetworkFailures,
                 recentEndpoints = overview.RecentEndpoints.Select(item => new { endpointId = item.EndpointId, method = item.Method, path = item.RequestPath, attempts = item.Attempts, averageLatencyMs = item.AverageLatencyMs, latestResponseStatus = item.LatestResponseStatus, latestOutcome = item.LatestOutcome }),
                 groups = overview.Groups.Select(item => new { groupId = item.GroupId, groupName = item.GroupName, requestsPerMinute = item.Attempts / 60d, observedEndpoints = item.ObservedEndpoints, measuredSuccessPercent = item.Attempts == 0 ? (double?)null : item.SuccessfulResponses * 100d / item.Attempts,
